@@ -340,16 +340,15 @@ function compareAngles(a, b) {
 function turnTowards(angl, angl2, turnSpeed) {
 	angl = angl % (Math.PI * 2)
 	angl -= Math.PI
-	if (angl < Math.PI * -1) {
+	if (angl < -Math.PI) {
 		angl += Math.PI * 2
 	}
 	if (angl2 > Math.PI) {
 		angl2 -= Math.PI * 2
 	}
-	if (angl2 < -1 * Math.PI) {
+	if (angl2 < -Math.PI) {
 		angl2 += Math.PI * 2
 	}
-
 	if (Math.abs(angl2 - angl) > turnSpeed) {
 		if (findSideToTurn(angl, angl2) > 0) {
 			return -1
@@ -394,6 +393,10 @@ function escapeHtml(unsafe) {
 		.replace(/'/g, "&#039;")
 }
 
+function rgba(r, g, b, a) {
+	return "rgba(" + r + "," + g + "," + b + "," + a + ")"
+}
+
 export {
 	formatTime,
 	arrayContains,
@@ -416,5 +419,6 @@ export {
 	getRange,
 	getURLParams,
 	getScrollbarWidth,
-	escapeHtml
+	escapeHtml,
+	rgba
 }

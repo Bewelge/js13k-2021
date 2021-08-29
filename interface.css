@@ -14,3 +14,41 @@ canvas {
 	left: 0;
 	margin: 0;
 }
+
+#zoomBar {
+	position: absolute;
+	right: 50px;
+	bottom: 50px;
+	height: calc(100% - 400px);
+	background-color: black;
+	border: green 1px solid;
+	width: 10px;
+	box-sizing: border-box;
+	pointer-events: all;
+	cursor: pointer;
+}
+#zoomHandle {
+	box-sizing: border-box;
+	position: absolute;
+	width: 20px;
+	border-radius: 5px;
+	height: 20px;
+	top: 10px;
+	left: -5px;
+	background-color: black;
+	border: 1px solid green;
+	cursor: pointer;
+	pointer-events: all;
+}
+#debug {
+	position: absolute;
+	z-index: 5;
+	top: 10;
+	left: 10;
+	color: white;
+}
+label {
+	color: white;
+	position: absolute;
+	left: 25px;
+}

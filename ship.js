@@ -1,22 +1,23 @@
 import { getNewRng } from "./Rng.js"
 import { rgba } from "./Util.js"
 
-export function getShipOpts(seed) {
+export function getShipOpts(seed, level) {
 	let rn = getNewRng(seed)
-	return createRandomShip(rn)
+	return createRandomShip(rn, level)
 }
 
-const createRandomShip = rn => {
+const createRandomShip = (rn, level) => {
 	let col1 = getRandomShipColor(rn)
 	let col2 = getRandomSecondaryColor(rn)
 
-	let hull = getHull(rn, col1)
+	let hp = Math.ceil(2 + 1000 * rn() * level)
+	let hull = getHull(rn, col1, hp)
 
-	let wings = getWings(hull, rn, col1, col2)
+	let wings = getWings(hull, rn, col1, col2, hp)
 
-	let thrust = getThrust(rn, hull, col1)
+	let thrust = getThrust(rn, hull, col1, hp)
 
-	let weapons = getWeapons(rn, wings, col2)
+	let weapons = getWeapons(rn, wings, col2, hp)
 	return {
 		hull: hull,
 		wings: wings,
@@ -25,14 +26,14 @@ const createRandomShip = rn => {
 	}
 }
 
-function getThrust(rn, hull, col1) {
+function getThrust(rn, hull, col1, hp) {
 	let thrustAmount = Math.ceil(rn() * 5)
 	let thrustW1 = hull.bottomW
 	let thrustW2 = 2 * rn() * hull.bottomW
 	let singleThrustW = (2.5 * rn() * thrustW2) / (thrustAmount + 2)
 	let thrustTop = hull.h / 2
 	let thrustH = Math.ceil(1000 * rn() * 2) / 1000
-	let thrustH1 = (0.5 + 0.5 * Math.random()) * thrustH
+	let thrustH1 = (0.5 + 0.5 * rn()) * thrustH
 	let thrustH2 = thrustH - thrustH1
 	let stepW = thrustW2 / (thrustAmount + 1)
 	let ps = []
@@ -46,6 +47,7 @@ function getThrust(rn, hull, col1) {
 		h: thrustH,
 		h1: thrustH1,
 		h2: thrustH2,
+		w1: thrustW1,
 		w2: thrustW2,
 		tw: singleThrustW,
 		top: thrustTop,
@@ -56,13 +58,19 @@ function getThrust(rn, hull, col1) {
 		path: getThrustPath(thrustTop, thrustW1, thrustH1, thrustW2),
 		path2: getThrustPath2(ps, singleThrustW, thrustH2),
 		hitMaskPath: new Path2D(),
-		hp: 100
+		hp: hp,
+		maxHp: hp
 	}
 	return thrust
 }
 
-function getWeapons(rn, wings, col2) {
+function getWeapons(rn, wings, col2, hp) {
 	let weaponAmount = Math.ceil(rn() * 3)
+	let bulletColor = [
+		Math.floor(155 + 100 * rn()),
+		Math.floor(155 + 100 * rn()),
+		Math.floor(155 + 100 * rn())
+	]
 	let weaponW = 0.1 + rn() * 0.15
 	let leftest = Math.max.apply(
 		null,
@@ -78,11 +86,11 @@ function getWeapons(rn, wings, col2) {
 		0
 	)
 	let weaponH = wings.maxH * 1.2 * rn()
-	let weaponTop = 0 + wings.maxY - wings.maxH - weaponH / 3
+	let weaponTop = wings.maxY - wings.maxH
 
-	let weaponTopW1 = (0.3 + Math.random() * 0.5) * weaponW
+	let weaponTopW1 = (0.3 + rn() * 0.5) * weaponW
 	let weaponTopW2 = weaponW
-	let weaponH1 = weaponH * Math.random()
+	let weaponH1 = weaponH * rn()
 	let weaponH2 = weaponH - weaponH1
 	let ps = [
 		[-weaponTopW1 / 2, 0],
@@ -101,8 +109,13 @@ function getWeapons(rn, wings, col2) {
 		(weaponW + weaponMargin) * weaponAmount * 2 + weaponMargin * 2,
 		weaponH
 	)
+	let isRound = rn() < 0.5
 
 	let weapons = {
+		topW1: weaponTopW1,
+		topW2: weaponTopW2,
+		h1: weaponH1,
+		h2: weaponH2,
 		w: weaponW,
 		h: weaponH,
 		x: weaponX,
@@ -112,18 +125,22 @@ function getWeapons(rn, wings, col2) {
 		leftest,
 		rightest,
 		color: col2,
-		path: getWeaponPath(ps, rn() < 0.5),
-		hp: 100,
+		bulletColor: bulletColor,
+		isRound,
+		path: getWeaponPath(ps, isRound),
+		hp: hp,
+		maxHp: hp,
 		hitMaskPath: new Path2D(),
 		colPath
 	}
 	return weapons
 }
 
-function getWings(hull, rn, col1, col2) {
+function getWings(hull, rn, col1, col2, hp) {
 	let wingMaxBottomW = hull.bottomW
 	let maxWingH = hull.h
-	let maxWingY = hull.h / 2
+	let maxWingY = -hull.h / 2
+	let minWingY = -hull.h / 2
 	let wingAmount = Math.ceil(rn() * 4)
 	let wingArr = []
 	for (let i = 0; i < wingAmount; i++) {
@@ -135,6 +152,8 @@ function getWings(hull, rn, col1, col2) {
 		let wingH2 = wingH1 + (hull.h - wingH1) * rn() * (0.5 + 0.3)
 		let wingH3 = wingH2 + (hull.h - wingH2) * rn()
 
+		let isRound = rn() < 0.5
+
 		wingArr.push({
 			topW: wingTopW,
 			bottomW: wingBottomW,
@@ -143,9 +162,9 @@ function getWings(hull, rn, col1, col2) {
 			h2: wingH2,
 			h3: wingH3,
 			offsetTop: wingOffsetTop,
-			hp: 100,
 			hitMaskPath: new Path2D(),
 			color: rn() < 0.3 ? col1 : col2,
+			isRound: isRound,
 			path: getWingPath(
 				wingTopW,
 				wingBottomW,
@@ -154,9 +173,20 @@ function getWings(hull, rn, col1, col2) {
 				wingH2,
 				wingH3,
 				-hull.h / 2,
-				rn() < 0.5
+				isRound
 			)
 		})
+
+		if (minWingY > wingOffsetTop - hull.h) {
+			minWingY = wingOffsetTop - hull.h
+		}
+		if (maxWingY < wingOffsetTop + wingH3 - hull.h) {
+			maxWingY = wingOffsetTop + wingH3 - hull.h
+			wingMaxBottomW = wingBottomW
+			maxWingH = wingH3
+		}
+		if (wingMaxBottomW < wingBottomW / 2) {
+		}
 	}
 	let wingPath = new Path2D()
 	wingArr.forEach(wing => wingPath.addPath(wing.path))
@@ -164,18 +194,20 @@ function getWings(hull, rn, col1, col2) {
 	let wings = {
 		maxW: wingMaxBottomW,
 		maxY: maxWingY,
+		minY: minWingY,
 		maxH: maxWingH,
 		amount: wingAmount,
 		list: wingArr,
 		path: wingPath,
 		color: col1,
 		hitMaskPath: new Path2D(),
-		hp: 100
+		hp: hp,
+		maxHp: hp
 	}
 	return wings
 }
 
-function getHull(rn, col) {
+function getHull(rn, col, hp) {
 	let hullTopW = rn() * 1 + 0.5
 	let hullBottomW = rn() * 1.5 + 0.5
 	let hullH = rn() * 2 + 0.5
@@ -202,11 +234,187 @@ function getHull(rn, col) {
 		hitMaskPath: hitMaskPath,
 		color: col,
 		hits: [],
-		hp: 100
+		hp: hp * 3,
+		maxHp: hp * 3
 	}
 	return hull
 }
+function getMerged(a, b, tween) {
+	return a * tween + b * (1 - tween)
+}
+export function getMergedHull(hull1, hull2, tween) {
+	return {
+		topW: getMerged(hull1.topW, hull2.topW, tween),
+		bottomW: getMerged(hull1.bottomW, hull2.bottomW, tween),
+		h: getMerged(hull1.h, hull2.h, tween),
+		controlTop: getMerged(hull1.controlTop, hull2.controlTop, tween),
+		controlSide: getMerged(hull1.controlSide, hull2.controlSide, tween),
+		windowSize: getMerged(hull1.windowSize, hull2.windowSize, tween),
+		path: getHullPath(
+			getMerged(hull1.topW, hull2.topW, tween),
+			getMerged(hull1.bottomW, hull2.bottomW, tween),
+			getMerged(hull1.h, hull2.h, tween),
+			0,
+			getMerged(hull1.controlTop, hull2.controlTop, tween),
+			getMerged(hull1.controlSide, hull2.controlSide, tween)
+		),
+		hitMaskPath: new Path2D(),
+		color: getMergedColor(hull1.color, hull2.color, tween),
+		hits: [],
+		maxHp: getMerged(hull1.maxHp, hull2.maxHp, tween),
+		hp: getMerged(hull1.maxHp, hull2.maxHp, tween)
+	}
+}
+export function getMergedWings(hullH, wings1, wings2, tween) {
+	let wingArr = []
+	for (let i = 0; i < wings2.list.length; i++) {
+		if (wings1.list[i] && wings2.list[i]) {
+			let wing1 = wings1.list[i]
+			let wing2 = wings2.list[i]
+			const topW = getMerged(wing1.topW, wing2.topW, tween)
+			const bottomW = getMerged(wing1.bottomW, wing2.bottomW, tween)
+			const h0 = getMerged(wing1.h0, wing2.h0, tween)
+			const h1 = getMerged(wing1.h1, wing2.h1, tween)
+			const h2 = getMerged(wing1.h2, wing2.h2, tween)
+			const h3 = getMerged(wing1.h3, wing2.h3, tween)
+			let wing = {
+				topW: topW,
+				bottomW: bottomW,
+				h0: h0,
+				h1: h1,
+				h2: h2,
+				h3: h3,
+				offsetTop: getMerged(wing1.offsetTop, wing2.offsetTop, tween),
+				hitMaskPath: new Path2D(),
+				color: getMergedColor(wing1.color, wing2.color, tween),
+				path: getWingPath(
+					topW,
+					bottomW,
+					h0,
+					h1,
+					h2,
+					h3,
+					-hullH / 2,
+					wing1.isRound ^ wing2.isRound
+				)
+			}
+			wingArr.push(wing)
+		} else {
+			wingArr.push(wings2.list[i])
+		}
+	}
+	let wingPath = new Path2D()
+	wingArr.forEach(wing => wingPath.addPath(wing.path))
+	return {
+		maxW: getMerged(wings1.maxW, wings2.maxW, tween),
+		maxY: getMerged(wings1.maxY, wings2.maxY, tween),
+		minY: getMerged(wings1.minY, wings2.minY, tween),
+		maxH: getMerged(wings1.maxH, wings2.maxH, tween),
+		amount: wings2.amount,
+		list: wingArr,
+		path: wingPath,
+		color: getMergedColor(wings1.color, wings2.color, tween),
+		hitMaskPath: new Path2D(),
+		maxHp: getMerged(wings1.maxHp, wings2.maxHp, tween),
+		hp: getMerged(wings1.maxHp, wings2.maxHp, tween)
+	}
+}
 
+export const getMergedWeapons = (weapons1, weapons2, tween) => {
+	const weaponW = getMerged(weapons1.w, weapons2.w, tween)
+	const weaponX = getMerged(weapons1.x, weapons2.x, tween)
+	let colPath = new Path2D()
+	const weaponTop = getMerged(weapons1.top, weapons2.top, tween)
+	const margin = getMerged(weapons1.margin, weapons2.margin, tween)
+	const amount = weapons2.amount
+	const h = getMerged(weapons1.h, weapons2.h, tween)
+	colPath.rect(
+		weaponX,
+		weaponTop,
+		(weaponW + margin) * amount * 2 + margin * 2,
+		h
+	)
+	const weaponTopW1 = getMerged(weapons1.topW1, weapons2.topW1, tween)
+	const weaponTopW2 = getMerged(weapons1.topW2, weapons2.topW2, tween)
+	const weaponH1 = getMerged(weapons1.h1, weapons2.h1, tween)
+	const weaponH2 = getMerged(weapons1.h2, weapons2.h2, tween)
+	let ps = [
+		[-weaponTopW1 / 2, 0],
+		[-weaponTopW1 / 2, weaponH1],
+		[-weaponTopW2 / 2, weaponH1],
+		[-weaponTopW2 / 2, weaponH1 + weaponH2],
+		[weaponTopW2 / 2, weaponH1 + weaponH2],
+		[weaponTopW2 / 2, weaponH1],
+		[weaponTopW1 / 2, weaponH1],
+		[weaponTopW1 / 2, 0]
+	]
+	let isRound = weapons1.isRound ^ weapons2.isRound
+	return {
+		topW1: weaponTopW1,
+		topW2: weaponTopW2,
+		h1: weaponH1,
+		h2: weaponH2,
+		w: weaponW,
+		h: h,
+		x: weaponX,
+		top: weaponTop,
+		margin: margin,
+		amount: amount,
+		leftest: Math.min(weapons1.leftest, weapons2.leftest),
+		rightest: Math.max(weapons1.rightest, weapons2.rightest),
+		color: getMergedColor(weapons1.color, weapons2.color, tween),
+		bulletColor: getMergedColor(
+			weapons1.bulletColor,
+			weapons2.bulletColor,
+			tween
+		),
+		isRound,
+		path: getWeaponPath(ps, isRound),
+		maxHp: getMerged(weapons1.maxHp, weapons2.maxHp, tween),
+		hp: getMerged(weapons1.maxHp, weapons2.maxHp, tween),
+		hitMaskPath: new Path2D(),
+		colPath
+	}
+}
+export const getMergedThrust = (hull, thrust1, thrust2, tween) => {
+	const amount = thrust2.amount
+	const w1 = getMerged(thrust1.w1, hull.bottomW, tween)
+	const w2 = getMerged(thrust1.w2, thrust2.w2, tween)
+	const h1 = getMerged(thrust1.h1, thrust2.h1, tween)
+	const h2 = getMerged(thrust1.h2, thrust2.h2, tween)
+	const tw = getMerged(thrust1.tw, thrust2.tw, tween)
+	const top = getMerged(thrust1.top, hull.h / 2, tween)
+	const stepW = w2 / (amount + 1)
+	let ps = []
+	for (let i = 1; i <= amount; i++) {
+		ps.push([-w2 / 2 + i * stepW - tw / 2, top + h1])
+	}
+	return {
+		h: getMerged(thrust1.h, thrust2.h, tween),
+		h1: h1,
+		h2: h2,
+		w1: w1,
+		w2: w2,
+		tw: tw,
+		top: top,
+		amount: amount,
+		stepW: stepW,
+		color: getMergedColor(thrust1.color, thrust2.color, tween),
+		points: ps,
+		path: getThrustPath(top, w1, h1, w2),
+		path2: getThrustPath2(ps, tw, h2),
+		hitMaskPath: new Path2D(),
+		maxHp: getMerged(thrust1.maxHp, thrust2.maxHp, tween),
+		hp: getMerged(thrust1.maxHp, thrust2.maxHp, tween)
+	}
+}
+function getMergedColor(col1, col2, tween) {
+	return [
+		col1[0] * tween + (1 - tween) * col2[0],
+		col1[1] * tween + (1 - tween) * col2[1],
+		col1[2] * tween + (1 - tween) * col2[2]
+	]
+}
 function getHullPath(topW, bottomW, h, y, controlTop, controlSide) {
 	let path = new Path2D()
 	path.moveTo(-topW / 2, y - h / 2)
@@ -261,6 +469,7 @@ function getWeaponPath(ps, isRound) {
 			path.lineTo(ps[i][0], ps[i][1])
 		}
 	}
+	path.lineTo(ps[0][0], ps[0][1])
 	return path
 }
 function getWingPath(w1, w2, h1, h2, h3, h4, y, isRound) {

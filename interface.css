@@ -7,8 +7,14 @@ body {
 	left: 0;
 	margin: 0;
 	background-color: black;
+	min-width: 1000px;
+	max-width: 100%;
+	max-height: 100%;
+	font-family: "Gill Sans MT";
 }
-canvas {
+#h,
+#c,
+#b {
 	position: absolute;
 	top: 0;
 	left: 0;
@@ -51,4 +57,137 @@ label {
 	color: white;
 	position: absolute;
 	left: 25px;
+}
+.dialog {
+	background-color: black;
+
+	width: 100%;
+	top: 0%;
+	left: 0%;
+	height: 0%;
+	overflow: hidden;
+	z-index: 6;
+	position: absolute;
+	box-sizing: border-box;
+
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: space-around;
+	align-content: center;
+	transition: height 0.3s ease-out;
+}
+.dialog button:hover {
+	color: black;
+	background-color: rgb(238, 238, 238);
+}
+.dialog button {
+	/* width: 100px; */
+	transition: all 0.3s ease-out;
+	padding: 1em;
+	font-size: 20px;
+	text-align: center;
+	font-weight: 800;
+	font-family: "Gill Sans MT";
+	border: none;
+	color: rgb(250, 250, 250);
+	background-color: rgb(15, 15, 15);
+}
+.cont {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-evenly;
+}
+.dialog .title,
+.dialog .subTitle {
+	text-align: center;
+	width: 100%;
+	font-size: 40px;
+	color: rgba(250, 250, 250, 1);
+
+	margin-top: 20px;
+}
+.dialog .subTitle {
+	font-size: 20px;
+}
+.col,
+.colWide {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+}
+.colWide {
+	flex-grow: 0.3;
+	user-select: none;
+}
+.compWide,
+.comp {
+	display: flex;
+	flex-direction: row;
+	color: rgb(250, 250, 250);
+	margin: 5px;
+	padding: 10px;
+	transition: all 0.3s ease-out;
+	box-sizing: border-box;
+}
+.compWide {
+	flex: 5;
+	justify-content: space-between;
+	align-items: center;
+	min-width: 300px;
+}
+.col > canvas {
+}
+.comp {
+	background-color: rgba(70, 70, 70, 1);
+}
+.comp.clickable:hover {
+	background-color: rgba(50, 50, 50, 1);
+}
+.comp:hover {
+	/* background: radial-gradient(
+		rgba(255, 255, 255, 0.5) 0%,
+		rgba(255, 255, 255, 0.5) 50%,
+		rgba(255, 255, 255, 0.1) 50%,
+		transparent 55%
+	); */
+}
+.comp.selected {
+	/* border: 3px solid green; */
+	box-shadow: inset 0 0 0px 5px white;
+}
+.statRow {
+	height: 20px;
+	float: none;
+}
+.statRow div {
+	font-size: 14px;
+	float: left;
+	margin-right: 1em;
+}
+.statRow {
+	white-space: nowrap;
+}
+.plus {
+	color: green;
+}
+.minus {
+	color: red;
+}
+.statValueChange {
+	color: white;
+}
+.statName {
+	white-space: nowrap;
+	text-align: center;
+	flex-grow: 1;
+}
+.statCol {
+}
+
+.statRow .statName2 {
+	float: right;
+}
+.statValue2 {
+	text-align: right;
 }

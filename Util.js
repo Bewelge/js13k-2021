@@ -339,21 +339,19 @@ function compareAngles(a, b) {
 }
 function turnTowards(angl, angl2, turnSpeed) {
 	angl = angl % (Math.PI * 2)
-	angl -= Math.PI
-	if (angl < -Math.PI) {
+	angl2 = angl2 % (Math.PI * 2)
+	// angl -= Math.PI
+	if (angl < 0) {
 		angl += Math.PI * 2
 	}
-	if (angl2 > Math.PI) {
-		angl2 -= Math.PI * 2
-	}
-	if (angl2 < -Math.PI) {
+	if (angl2 < 0) {
 		angl2 += Math.PI * 2
 	}
 	if (Math.abs(angl2 - angl) > turnSpeed) {
 		if (findSideToTurn(angl, angl2) > 0) {
-			return -1
-		} else {
 			return 1
+		} else {
+			return -1
 		}
 	}
 	return 0

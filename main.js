@@ -1,3 +1,4 @@
+import { openWindow } from "./mergeComponents.js"
 import { getNewRng } from "./Rng.js"
 import { getShipOpts } from "./ship.js"
 import { renderShip, rgb } from "./ShipRender.js"
@@ -10,7 +11,8 @@ import {
 	turnTowards
 } from "./Util.js"
 
-var debug = false
+var paused = true
+var debug = true
 document
 	.getElementById("debug")
 	.addEventListener("change", () => (debug = !debug))
@@ -26,7 +28,7 @@ var trailSmoke = []
 var brokenComponents = []
 let randomStartSeed = Math.floor(Math.random() * 99999)
 console.log("Ship seed: " + randomStartSeed)
-var zoom = 10
+var zoom = 25
 var quadrantSize = 3500
 var mousePos = { x: 0, y: 0 }
 var time = 0
@@ -35,29 +37,89 @@ var keysdown = {}
 var mouseDown = false
 var bullets = {}
 var activeEnemies = new Set()
+
+function getNewPlayer() {
+	let rndStart = {
+		x: Math.floor(Math.random() * 10000),
+		y: Math.floor(Math.random() * 10000)
+	}
+	console.log("Home Planet: x: " + rndStart.x + ", y:" + rndStart.y)
+	while (
+		!hasQuadrantGalaxy(rndStart) ||
+		!getGalaxyOpts(rndStart.x, rndStart.y).planets.length
+	) {
+		rndStart = {
+			x: Math.floor(Math.random() * 10000),
+			y: Math.floor(Math.random() * 10000)
+		}
+		console.log("Home Planet: x: " + rndStart.x + ", y:" + rndStart.y)
+	}
+	screenPos = getGalaxyOpts(rndStart.x, rndStart.y).planets[0].pos // { x: rndStart.x * quadrantSize, y: rndStart.y * quadrantSize } // getGalaxyOpts(rndStart.x, rndStart.y).planets[0].pos
+	planetLock = getGalaxyOpts(rndStart.x, rndStart.y).planets[0]
+	homePlanet = getGalaxyOpts(rndStart.x, rndStart.y).planets[0]
+	// player.x = screenPos.x + 25
+	// player.y = screenPos.y + 25
+	player = {
+		seed: randomStartSeed,
+		race: getRaceName(getNewRng(randomStartSeed)),
+		boostLeft: false,
+		boostRight: false,
+		x: screenPos.x + 25,
+		y: screenPos.y + 25,
+		level: 5,
+		rot: -Math.PI * 0.5,
+		planet: null,
+		thrust: {
+			x: 0,
+			y: 0
+		},
+		rotThrust: 0,
+		mot: {
+			x: 0,
+			y: 0
+		},
+		acc: 0.1,
+		speed: 0.003,
+		turnSpeed: 0.05,
+		turnStability: 0.95,
+		fireRate: 60,
+		dmg: 1,
+		shotCd: 0,
+		shotLife: 20 / 0.01,
+		shotSpeed: 0.01,
+		shotDis: 20,
+
+		shipOpts: getShipOpts(randomStartSeed, 5 / 500)
+	}
+}
+
 export class Enemy {
 	constructor(opts) {
 		this.seed = opts.seed
-		this.shipOpts = getShipOpts(this.seed)
+		this.shipOpts = getShipOpts(this.seed, player.level / 500)
+		this.race = getRaceName(getNewRng(opts.seed))
+
 		this.shotDis = opts.shotDis
 		this.turnSpeed = opts.turnSpeed
 		this.speed = opts.speed
-		this.enemyDistance = opts.enemyDistance
-		this.size = opts.size
-		this.shotSpeed = opts.shotSpeed || 0.02
-		this.dmg = opts.dmg
+		this.shotLife = opts.shotLife
+		this.shotCd = 0
+		this.dmg = opts.dmg / this.shipOpts.weapons.amount
 		this.fireRate = opts.fireRate
+
+		this.enemyDistance = opts.enemyDistance
+		this.shotSpeed = opts.shotSpeed || 0.02
+
 		this.galaxy = opts.galaxy
+
+		this.size = opts.size
 		let pos = this.findRandomAim()
-		console.log(pos)
+
 		this.x = pos.x
 		this.y = pos.y
 		this.mot = { x: 0, y: 0 }
 		this.rotAcc = 0
 		this.rot = Math.random() * Math.PI * 2
-		this.shotLife = opts.shotLife
-
-		this.shotCd = 0
 
 		//bullet
 	}
@@ -72,36 +134,25 @@ export class Enemy {
 			this.rot,
 			this.shotSpeed,
 			this.dmg,
-			this.shotLife * (this.shipOpts.weapons.isDead ? 0.05 : 1)
+			this.shotLife
 		)
 	}
 	update() {
 		let disToPlayer = distPoints(this, player)
+		if (this.shotCd > 0) {
+			this.shotCd -= 1 * (this.shipOpts.weapons.isDead ? 0.5 : 1)
+		}
 		if (disToPlayer < this.enemyDistance) {
 			if (disToPlayer < this.shotDis) {
-				if (
-					compareAngles(this.rot + Math.PI, anglePoints(player, this)) <
-					this.turnSpeed * 10
-				) {
-					if (this.shotCd) {
-						this.shotCd--
-					} else {
-						this.shoot()
-						this.shotCd = this.fireRate
-					}
-					this.boostRight = this.boostLeft = false
-				} else {
-					// let rotation = (this.rot +=
-					// 	this.turnSpeed *
-					// 	turnTowards(
-					// 		this.rot + Math.PI,
-					// 		anglePoints(player, this),
-					// 		this.turnSpeed
-					// 	))
-					// rotation > 0 ? (this.boostLeft = true) : (this.boostLeft = false)
-					// rotation < 0 ? (this.boostRight = true) : (this.boostRight = false)
+				// if (
+				// 	compareAngles(this.rot + Math.PI, anglePoints(player, this)) <
+				// 	this.turnSpeed * 10
+				// ) {
+				if (!this.shipOpts.weapons.isDead && this.shotCd <= 0) {
+					this.shoot()
+					this.shotCd = this.fireRate
 				}
-				// this.boost = false
+				this.boostRight = this.boostLeft = false
 			}
 			this.aim = player
 			this.moveTo(player)
@@ -113,7 +164,9 @@ export class Enemy {
 				this.aim == player &&
 				disToPlayer >
 					this.enemyDistance *
-						(getShipQuadrant(this) == getShipQuadrant(player) ? 5 : 2.5)
+						(posEquals(getShipQuadrant(this), getShipQuadrant(player))
+							? 5
+							: 2.5)
 			) {
 				this.aim = null
 			}
@@ -131,7 +184,7 @@ export class Enemy {
 		this.x += this.mot.x
 		this.y += this.mot.y
 
-		checkCollisions(this)
+		checkCollisions(this, false)
 
 		let components = [
 			this.shipOpts.hull,
@@ -154,6 +207,7 @@ export class Enemy {
 
 		if (this.shipOpts.hull.isDead) {
 			this.isDead = true
+			player.level += 0.2
 		}
 	}
 	findRandomAim() {
@@ -164,6 +218,8 @@ export class Enemy {
 				],
 				time
 			)
+			pos.x += Math.random() * 40
+			pos.y += Math.random() * 40
 			return pos
 		}
 		return {
@@ -176,7 +232,34 @@ export class Enemy {
 		}
 	}
 	render() {
-		renderAShip(this, this.boost, this.boostLeft, this.boostRight)
+		renderAShip(this, this.boost, this.boostLeft, this.boostRight, true)
+		let onsc = getOnScreenPos(this.x, this.y)
+		if (distPoints(mousePos, onsc) < zoom * this.size * 10) {
+			c.fillStyle = "green"
+			c.textBaseline = "top"
+			let comps = {
+				Hull: "hull",
+				Weapons: "weapons",
+				Wings: "wings",
+				Thrust: "thrust"
+			}
+			c.font = "14px Gill Sans MT"
+			c.fillText(this.race + " Ship", onsc.x - 60, onsc.y - 110)
+			c.font = "12px Gill Sans MT"
+			Object.entries(comps).forEach((entry, i) => {
+				c.fillText(entry[0], onsc.x - 60, onsc.y - 90 + 13 * i)
+				c.fillRect(
+					onsc.x,
+					onsc.y - 90 + 13 * i,
+					(60 * this.shipOpts[entry[1]].hp) / this.shipOpts[entry[1]].maxHp,
+					5
+				)
+			})
+			c.beginPath()
+			c.arc(onsc.x, onsc.y, this.size * zoom * 10, 0, 8)
+			c.closePath()
+			c.stroke()
+		}
 		if (debug) {
 			c.strokeStyle = "rgba(255,255,255,0.5)"
 			let ons = getOnScreenPos(this.x, this.y)
@@ -206,21 +289,29 @@ export class Enemy {
 		}
 	}
 	moveTo(pos) {
+		// let x = pos.x - this.x
+		// let y = pos.y - this.y
+		// let lngth = Math.sqrt(x * x + y * y)
+		// this.mot.x = (0.5 * x) / lngth
+		// this.mot.y = (0.5 * y) / lngth
+
 		let rotation =
 			-this.turnSpeed *
+			0.05 *
 			turnTowards(anglePoints(pos, this), this.rot + Math.PI, this.turnSpeed)
 		rotation > 0 ? (this.boostLeft = true) : (this.boostLeft = false)
 		rotation < 0 ? (this.boostRight = true) : (this.boostRight = false)
+		if (rotation == 0) {
+		}
 		this.rotAcc += rotation * (this.shipOpts.wings.isDead ? 0.1 : 1)
 		this.rot += this.rotAcc
 
-		if (!this.shipOpts.wings.isDead) {
-			this.rotAcc *= 0.9
-		}
+		this.rotAcc *= 0.9 + (this.shipOpts.wings.isDead ? 0.09 : 0)
+
 		let dis = distPoints(this, pos)
 
 		let speed =
-			((Math.log(dis) * 2) / Math.log(this.shotDis)) *
+			(Math.log(dis) / Math.log(this.shotDis)) *
 			this.speed *
 			(this.shipOpts.thrust.isDead ? 0.1 : 1)
 		let acc = speed
@@ -230,7 +321,11 @@ export class Enemy {
 		this.boost = true
 	}
 }
-
+function killall() {
+	activeEnemies.forEach(enemy =>
+		Object.values(enemy.shipOpts).forEach(comp => (comp.hp = 0))
+	)
+}
 const ZOOM_MAX = 6000
 const ZOOM_MIN = 0.01
 var zoomHandleGrabbed = false
@@ -269,6 +364,9 @@ window.onload = () => {
 
 	window.addEventListener("keydown", ev => {
 		keysdown[ev.key] = true
+		if (debug && ev.key == "k") {
+			killall()
+		}
 	})
 	window.addEventListener("keyup", ev => {
 		keysdown[ev.key] = false
@@ -278,21 +376,37 @@ window.onload = () => {
 		mouseDown = true
 		mousePos = { x: ev.clientX, y: ev.clientY }
 
-		if (hoveredGalaxy) {
+		if (hoveredGalaxy && debug) {
+			// let galAngle = anglePoints(hoveredGalaxy.middle, player)
+			// let dis = distPoints(hoveredGalaxy.middle, player)
+			// player.x -= Math.cos(galAngle) * (dis - hoveredGalaxy.size)
+			// player.y -= Math.sin(galAngle) * (dis - hoveredGalaxy.size)
 			if (hoveredPlanet) {
-				console.log("planet")
+				// console.log("planet")
 				// zoomAim = {
 				// 	x: getPlanetPos(hoveredPlanet).x,
 				// 	y: getPlanetPos(hoveredPlanet).y,
 				// 	zoom: (hoveredPlanet.rad * 3) / Math.min(w, h)
 				// }
 				planetLock = hoveredPlanet
-			} else {
-				zoomAim = {
-					x: hoveredGalaxy.middle.x,
-					y: hoveredGalaxy.middle.y,
-					zoom: Math.min(w, h) / (hoveredGalaxy.size * zoom * 1.1)
-				}
+				let planetPos = getPlanetPos(hoveredPlanet, time)
+				let galAngle = anglePoints(planetPos, player)
+				let dis = distPoints(planetPos, player)
+				player.x -= Math.cos(galAngle) * (dis - hoveredPlanet.rad)
+				player.y -= Math.sin(galAngle) * (dis - hoveredPlanet.rad)
+			} else if (
+				zoom < 0.5 &&
+				!posEquals(hoveredGalaxy, getShipQuadrant(player))
+			) {
+				// zoomAim = {
+				// 	x: hoveredGalaxy.middle.x,
+				// 	y: hoveredGalaxy.middle.y,
+				// 	zoom: Math.min(w, h) / (hoveredGalaxy.size * zoom * 1.1)
+				// }
+				let galAngle = anglePoints(hoveredGalaxy.middle, player)
+				let dis = distPoints(hoveredGalaxy.middle, player)
+				player.x -= Math.cos(galAngle) * (dis - hoveredGalaxy.size)
+				player.y -= Math.sin(galAngle) * (dis - hoveredGalaxy.size)
 			}
 		}
 	})
@@ -411,27 +525,7 @@ window.onload = () => {
 		setZoomHandleFromZoom()
 	})
 
-	let rndStart = {
-		x: Math.floor(Math.random() * 10000),
-		y: Math.floor(Math.random() * 10000)
-	}
-	console.log("Home Planet: x: " + rndStart.x + ", y:" + rndStart.y)
-	// while (
-	// 	!hasQuadrantGalaxy(rndStart) ||
-	// 	!getGalaxyOpts(rndStart.x, rndStart.y).planets.length
-	// ) {
-	// 	rndStart = {
-	// 		x: Math.floor(Math.random() * 10000),
-	// 		y: Math.floor(Math.random() * 10000)
-	// 	}
-	// 	console.log("Home Planet: x: " + rndStart.x + ", y:" + rndStart.y)
-	// }
-	screenPos = { x: rndStart.x * quadrantSize, y: rndStart.y * quadrantSize } // getGalaxyOpts(rndStart.x, rndStart.y).planets[0].pos
-	// planetLock = getGalaxyOpts(rndStart.x, rndStart.y).planets[0]
-	// homePlanet = getGalaxyOpts(rndStart.x, rndStart.y).planets[0]
-	player.x = screenPos.x + 25
-	player.y = screenPos.y + 25
-
+	startScreen()
 	update()
 }
 
@@ -469,15 +563,17 @@ var lastTime = window.performance.now()
 var timeUntilNextTick = 0
 var tickDur = 16
 function update() {
-	// let newTime = window.performance.now()
-	// timeUntilNextTick += newTime - lastTime
-	// lastTime = newTime
-	// while (timeUntilNextTick > tickDur) {
-	// 	timeUntilNextTick -= tickDur
-	// }
-	time += 1
-	tick()
-	render()
+	if (!paused) {
+		let newTime = window.performance.now()
+		timeUntilNextTick += newTime - lastTime
+		lastTime = newTime
+		while (timeUntilNextTick > tickDur) {
+			timeUntilNextTick -= tickDur
+		}
+		tick()
+		time += 1
+		render()
+	}
 	window.requestAnimationFrame(update)
 }
 function tick() {
@@ -486,57 +582,49 @@ function tick() {
 		updateBullets()
 	}
 
+	if (player.shotCd > 0) {
+		player.shotCd -= 1 * (player.shipOpts.weapons.isDead ? 0.5 : 1)
+	}
 	if (mouseDown) {
-		if (player.shootCd) {
-			player.shootCd--
-		} else {
-			player.shootCd = player.fireRate
-			let x = Math.cos(player.rot) * 0.05
-			let y = Math.sin(player.rot) * 0.05
+		if (player.shotCd <= 0) {
+			player.shotCd = player.fireRate
 
-			// player.mot.x -= Math.cos(player.rot) * 0.2
-			// player.mot.y -= Math.sin(player.rot) * 0.2
 			createBullets(
 				player.seed,
 				player.shipOpts.weapons,
 				player,
 				player.size,
-				//- Math.PI * 0.125,
 				player.rot,
-				0.05,
-				player.firePower,
+				player.shotSpeed,
+				player.dmg,
 				player.shotLife
-				// angle(w / 2, h / 2, mousePos.x, mousePos.y)
 			)
 		}
 	}
 	let pQ = getShipQuadrant(player)
 	for (let i = pQ.x - 1; i <= pQ.x + 1; i++) {
 		for (let j = pQ.y - 1; j <= pQ.y + 1; j++) {
-			getEnemies(i, j).forEach(enemy => {
-				if (distPoints(enemy, player) < 1000 || getShipQuadrant(enemy) == pQ) {
-					activeEnemies.add(enemy)
-				}
-			})
+			let gOpts = getGalaxyOpts(pQ.x, pQ.y)
+
+			if (gOpts.middle && distPoints(gOpts.middle, player) < quadrantSize)
+				getEnemies(i, j).forEach(enemy => {
+					if (
+						distPoints(enemy, player) < 1000 ||
+						posEquals(getShipQuadrant(enemy), pQ)
+					) {
+						activeEnemies.add(enemy)
+					}
+				})
 		}
 	}
-	// drawnQuadrants
-	// 	.map(p => ({ x: p[0], y: p[1] }))
-	// 	.forEach(pos => {
-	// 		if (enemyCache[pos.x] && enemyCache[pos.x][pos.y]) {
-	// 			for (let k = enemyCache[pos.x][pos.y].length - 1; k >= 0; k--) {
-	// 				let enemy = enemyCache[pos.x][pos.y][k]
-	// 				enemy.update()
 
-	// 				if (enemy.isDead) {
-	// 					enemyCache[pos.x][pos.y].splice(k, 1)
-	// 				}
-	// 			}
-	// 		}
-	// 	})
 	activeEnemies.forEach(enemy => enemy.update())
 	activeEnemies.forEach(enemy => {
-		if (distPoints(enemy, player) > 1000 && enemy.aim != player) {
+		if (
+			distPoints(enemy, player) > 1000 &&
+			enemy.aim != player &&
+			!posEquals(getShipQuadrant(enemy), getShipQuadrant(player))
+		) {
 			console.log("Removed active enemy")
 			activeEnemies.delete(enemy)
 		}
@@ -546,15 +634,25 @@ function tick() {
 		if (enemy.isDead) {
 			let arr = enemyCache[enemy.galaxy.x][enemy.galaxy.y]
 			arr.splice(arr.indexOf(enemy), 1)
+
+			if (arr.length == 0) {
+				paused = true
+				openWindow(player, enemy, function () {
+					player.level += 3
+					console.log("unpasue")
+					lastTime = window.performance.now()
+					paused = false
+				})
+			}
 			activeEnemies.delete(enemy)
 			if (arr.length == 0) {
 			}
 		}
 	})
-
-	//
 }
-
+function posEquals(p1, p2) {
+	return p1.x == p2.x && p1.y == p2.y
+}
 var conqueredQuadrants = {}
 var drawnQuadrants = []
 function render() {
@@ -572,12 +670,11 @@ function render() {
 			drawnQuadrants.push([i, j])
 		}
 	}
+	renderBrokenComponents()
 	activeEnemies.forEach(enemy => enemy.render())
 
-	renderBrokenComponents()
-
-	drawPlayer()
 	renderTrailSmoke()
+	drawPlayer()
 
 	drawBullets()
 	renderBulletHits()
@@ -616,7 +713,8 @@ function createBullets(
 			shootDir,
 			newSpd,
 			dmg,
-			shotLife
+			shotLife,
+			weaponsOpts.bulletColor
 		)
 		dis = dist(0, 0, shipSize * -weapOffsetX, shipSize * weaponsOpts.top)
 		ang = angle(0, 0, shipSize * -weapOffsetX, shipSize * weaponsOpts.top)
@@ -627,15 +725,16 @@ function createBullets(
 			shootDir,
 			newSpd,
 			dmg,
-			shotLife
+			shotLife,
+			weaponsOpts.bulletColor
 		)
 	}
 }
-function addBullet(seed, x, y, dir, spd, dmg, shotLife) {
+function addBullet(seed, x, y, dir, spd, dmg, shotLife, color) {
 	if (!bullets.hasOwnProperty(seed)) {
 		bullets[seed] = []
 	}
-	bullets[seed].push([x, y, dir, spd, dmg, shotLife])
+	bullets[seed].push([x, y, dir, spd, dmg, shotLife, color])
 }
 function updateBullets() {
 	Object.values(bullets).forEach(bulletsOfSeed => {
@@ -660,11 +759,12 @@ function updateBullets() {
 }
 function drawBullets() {
 	c.strokeStyle = "rgba(255,255,255,0.1)"
+	c.strokeStyle = "rgba(0,0,0,1 w)"
 	c.lineWidth = 0.5
 	Object.entries(bullets).forEach(entry => {
 		let seed = entry[0]
 		let bulletsOfSeed = entry[1]
-		c.fillStyle = getBulletColor(seed)
+		c.fillStyle = bulletsOfSeed.length ? rgb(bulletsOfSeed[0][6]) : "black"
 		c.beginPath()
 		bulletsOfSeed.forEach(bullet => {
 			let pos = getOnScreenPos(bullet[0], bullet[1])
@@ -672,7 +772,7 @@ function drawBullets() {
 			c.arc(
 				pos.x - 2,
 				pos.y - 2,
-				0.1 * zoom * (bullet[6] < 50 ? bullet[6] / 50 : 1),
+				0.1 * zoom * (bullet[5] < 50 ? bullet[5] / 50 : 1),
 				0,
 				8
 			)
@@ -699,12 +799,11 @@ function drawQuadrant(x, y) {
 		let opts = getGalaxyOpts(x, y)
 		let rn = getNewRng(opts.seed)
 		let starPos = getOnScreenPos(opts.middle.x, opts.middle.y)
+		let isHovered = distPoints(starPos, mousePos) < opts.size * zoom
+		isHovered ? (hoveredGalaxy = opts) : null
 		if (zoom < 0.5) {
 			let mx = screenPos.x + (mousePos.x - w / 2) / zoom
 			let my = screenPos.y + (mousePos.y - h / 2) / zoom
-
-			let isHovered = distPoints(starPos, mousePos) < opts.size * zoom
-			isHovered ? (hoveredGalaxy = opts) : null
 
 			if (isHovered) {
 				c.strokeStyle = "green"
@@ -735,18 +834,30 @@ function drawQuadrant(x, y) {
 				c.fillText(tx, starPos.x - 40 - wd - opts.size * zoom, starPos.y + 6)
 			}
 		}
-		if (opts.starRad * zoom < 0.6) {
-			// getStarCol(starRad, rn)
-			// c.globalAlpha = 0.4
-			// star(c, starPos.x, starPos.y, starRad * zoom + 1)
-			return
-		}
+
 		//Draw stars
 
 		let rad = opts.starRad * zoom
 		c.fillStyle = opts.col(zoom, 1)
+		let starX = starPos.x
+		let starY = starPos.y
 		c.beginPath()
-		c.arc(starPos.x, starPos.y, rad - 10 * zoom, 0, 8)
+		if (getPlayerSpeed() > 250000) {
+			let rem = Math.max(0, 299792 - getPlayerSpeed()) / 50000
+			starX = w / 2 - rem * (w / 4) * Math.cos(Math.abs(starPos.x))
+			starY = h / 2 - rem * (h / 4) * Math.cos(Math.abs(starPos.y))
+
+			let c2 = cnv2.getContext("2d")
+			c2.fillStyle =
+				"rgba(125," +
+				(155 + Math.random() * 100) +
+				"," +
+				(155 + Math.random() * 100) +
+				",0.4)"
+			star(c2, Math.random() * w, Math.random() * h, Math.random() * 2)
+			c2.fill()
+		}
+		c.arc(starX, starY, rad - 10 * zoom, 0, 8)
 		c.closePath()
 		c.fill()
 
@@ -764,8 +875,8 @@ function drawQuadrant(x, y) {
 				")"
 			c.beginPath()
 			c.ellipse(
-				starPos.x,
-				starPos.y,
+				starX,
+				starY,
 				rad * (0.8 + 0.4 * rn() * Math.abs(((rn() * i * 0.01) % 1) - 0.5)),
 				rad * (0.8 + 0.4 * rn() * Math.abs(((rn() * i * 0.01 + 0.5) % 2) - 1)),
 				rn() * Math.PI * 2 + Math.abs(((rn() * i * 0.01 + 0.5) % 2) - 1),
@@ -793,20 +904,15 @@ function drawPlanets(opts) {
 	opts.planets
 		.filter(planet => planet.rad * zoom > 1)
 		.forEach(planet => {
-			let planetPos = getPlanetPos(planet, time)
-			let onScreenPos = getOnScreenPos(planetPos.x, planetPos.y)
-			drawPlanet(planet, onScreenPos, opts)
+			drawPlanet(planet, opts)
 			c.closePath()
-			// if ( isHovered ) {
-			// 	if ( distPoints( onScreenPos, mousePos ) < planet.rad * zoom ) {
-			// 		hoveredPlanet = planet
+
 			// 		c.strokeStyle = "green"
 			// 		c.lineWidth = 2
 			// 		c.beginPath()
 			// 		c.arc( onScreenPos.x, onScreenPos.y, planet.rad * zoom + 5, 0, 8 )
 			// 		c.stroke()
 			// 		c.closePath()
-			// 	}
 			// }
 		})
 }
@@ -814,20 +920,20 @@ function hitExplosion(pos, rad) {
 	for (let i = 0; i < 1; i++) {
 		c.fillStyle =
 			"rgba(" +
-			0 +
+			255 +
 			"," +
 			Math.floor((Math.abs((time % 14) - 7) / 7) * 255) +
 			"," +
 			Math.floor((Math.abs((time % 34) - 17) / 17) * 255) +
 			"," +
-			0.5 * Math.random() +
+			(0.3 + 0.5 * Math.random()) +
 			")"
 		c.beginPath()
 		c.ellipse(
 			pos.x,
 			pos.y,
-			rad * 1.5 * zoom * Math.random(),
-			rad * 1.2 * zoom * Math.random(),
+			0.3 + rad * 1.2 * zoom * Math.random(),
+			0.3 + rad * 0.9 * zoom * Math.random(),
 			((time * 0.01) % 1.248) * Math.PI * 2,
 			0,
 			Math.PI * 2,
@@ -864,30 +970,8 @@ function drawExplosion(rn, starPos, rad) {
 		c.closePath()
 	}
 }
-var player = {
-	seed: randomStartSeed,
-	x: 0,
-	y: 0,
-	health: 100,
-	rot: -Math.PI * 0.5,
-	planet: null,
-	thrust: {
-		x: 0,
-		y: 0
-	},
-	rotThrust: 0,
-	mot: {
-		x: 0,
-		y: 0
-	},
-	speed: 1,
-	turnSpeed: 1,
-	fireRate: 10,
-	firePower: 50,
-	fireCd: 0,
-	shipOpts: getShipOpts(randomStartSeed),
-	shotLife: 1000
-}
+var player = {}
+
 var playerPathCounter = 0
 function drawPlayer() {
 	let x = player.x
@@ -901,8 +985,9 @@ function drawPlayer() {
 			playerPath.splice(0, 1)
 		}
 	}
+	if (player.isDead) return
 
-	if (zoom < 1) {
+	if (zoom < 5) {
 		let onsc = getOnScreenPos(x, y)
 
 		c.lineWidth = 1
@@ -945,7 +1030,7 @@ function drawPlayer() {
 			)
 		})
 	}
-	renderAShip(player, arrowUp, keysdown["ArrowLeft"], keysdown["ArrowRight"])
+	renderAShip(player, arrowUp, player.boostLeft, player.boostRight, false)
 
 	if (zoom > 5000) {
 		c.font = (((h / 2) * zoom) / 5000) * player.size + "px Arial"
@@ -987,7 +1072,7 @@ function drawPlayer() {
 
 	// c.restore()
 }
-function renderAShip(ship, boost, boostLeft, boostRight) {
+function renderAShip(ship, boost, boostLeft, boostRight, showDmg) {
 	let quadrantX = Math.floor(ship.x / quadrantSize)
 	let quadrantY = Math.floor(ship.y / quadrantSize)
 	let shipSystem = getGalaxyOpts(quadrantX, quadrantY)
@@ -1026,32 +1111,141 @@ function renderAShip(ship, boost, boostLeft, boostRight) {
 		ship.rot,
 		sunAng - ship.rot - Math.PI * 0.5,
 		shadeOffset,
+		showDmg,
 		boost,
 		boostLeft,
 		boostRight
 	)
 }
+function gameOver() {
+	let createDiv = className => {
+		let d = document.createElement("div")
+		d.className = className
+		return d
+	}
 
+	let dialog = createDiv("dialog")
+	document.body.appendChild(dialog)
+
+	let msg = createDiv("title")
+	msg.innerHTML = "Oh no. You died."
+	dialog.appendChild(msg)
+
+	let continueBut = document.createElement("button")
+	continueBut.innerHTML = "Continue anyway"
+	continueBut.onclick = () => {
+		Object.values(player.shipOpts).forEach(comp => {
+			comp.hp = comp.maxHp
+			comp.isDead = false
+		})
+		player.isDead = false
+		let playerGal = getShipQuadrant(player)
+		if (hasQuadrantGalaxy(playerGal)) {
+			let gal = getGalaxyOpts(playerGal.x, playerGal.y)
+			player.x = gal.middle.x - gal.size
+			player.y = gal.middle.y - gal.size
+		} else {
+			player.x = playerGal.x * quadrantSize
+			player.y = playerGal.y * quadrantSize
+		}
+		player.mot.x = 0
+		player.mot.y = 0
+		document.body.removeChild(dialog)
+		paused = false
+	}
+	let newGameBut = document.createElement("button")
+	newGameBut.innerHTML = "Start another game"
+
+	dialog.appendChild(continueBut)
+	dialog.appendChild(newGameBut)
+	window.setTimeout(() => (dialog.style.height = "100%"), 50)
+}
+
+function startScreen() {
+	let createDiv = className => {
+		let d = document.createElement("div")
+		d.className = className
+		return d
+	}
+
+	let dialog = createDiv("dialog")
+	document.body.appendChild(dialog)
+
+	let msg = createDiv("title")
+	msg.innerHTML = "Space."
+	dialog.appendChild(createDiv(""))
+	dialog.appendChild(msg)
+
+	let msg2 = createDiv("subTitle")
+	msg2.innerHTML =
+		"Mouse to aim. </br> W/S Up-/Down-Arrow to thrust. </br> Click to shoot. "
+
+	let newGameBut = document.createElement("button")
+	newGameBut.innerHTML = "Start game"
+	newGameBut.onclick = () => {
+		getNewPlayer()
+		paused = false
+		document.body.removeChild(dialog)
+	}
+
+	dialog.appendChild(newGameBut)
+	dialog.appendChild(msg2)
+	dialog.appendChild(createDiv(""))
+	dialog.style.height = "100%"
+}
 function updatePlayer() {
-	Object.values(player.shipOpts).forEach(component =>
-		component.hp <= 0 ? (component.isDead = true) : null
-	)
+	let allDead = true
+	Object.values(player.shipOpts).forEach(component => {
+		if (!component.isDead && component.hp <= 0) {
+			component.isDead = true
+			if (component == player.shipOpts.hull) {
+				Object.values(player.shipOpts).forEach(component =>
+					addBrokenComponent(
+						player.x,
+						player.y,
+						player.size,
+						player.rot + Math.PI * 0.5,
+						component
+					)
+				)
+				player.isDead = true
+				window.setTimeout(() => {
+					paused = true
+					gameOver()
+				}, 2500)
+				return
+			}
+		}
+	})
 
-	// if (player.planet) {
+	if (player.shipOpts.hull.isDead) {
+	}
+
 	let playerQuadrant = getShipQuadrant(player)
+
 	if (hasQuadrantGalaxy(playerQuadrant)) {
 		let galaxyOpts = getGalaxyOpts(playerQuadrant.x, playerQuadrant.y)
+
 		updatePlayerGrav(galaxyOpts)
+		player.isOnPlanet = false
+		player.isRepairing = false
 		galaxyOpts.planets.forEach(planet => {
 			let pPos = getPlanetPos(planet, time)
 			if (distPoints(player, pPos) < planet.rad) {
-				Object.values(player.shipOpts).forEach(
-					component => (component.hp = Math.min(100, component.hp + 0.1))
-				)
+				Object.values(player.shipOpts).forEach(component => {
+					player.isOnPlanet = true
+					component.hp = Math.min(component.maxHp, component.hp + 0.1)
+					if (component.hp == component.maxHp) {
+						component.isDead = false
+					} else {
+						player.isRepairing = true
+					}
+				})
 			}
 		})
 	}
-	let speed = 0.003 * (player.shipOpts.thrust.isDead ? 0.1 : 1)
+	let speed = player.speed * (player.shipOpts.thrust.isDead ? 0.25 : 1)
+	let turnSpeed = player.turnSpeed * (player.shipOpts.wings.isDead ? 0.5 : 1)
 	if (
 		keysdown["ArrowUp"] ||
 		keysdown["ArrowUp"] ||
@@ -1066,12 +1260,25 @@ function updatePlayer() {
 		player.thrust.x -= Math.cos(player.rot) * speed
 		player.thrust.y -= Math.sin(player.rot) * speed
 	}
+
 	let turn = -turnTowards(
 		angle(w / 2, h / 2, mousePos.x, mousePos.y),
-		player.rot % (Math.PI * 2),
-		speed * 13 * (player.shipOpts.wings.isDead ? 0.05 : 1)
+		player.rot,
+		turnSpeed * (player.shipOpts.wings.isDead ? 0.1 : 1)
 	)
-	player.rot += turn * speed * 10
+	player.boostLeft = Math.max(0, turn < 0 ? 10 : player.boostLeft - 1)
+
+	player.boostRight = Math.max(0, turn > 0 ? 10 : player.boostRight - 1)
+
+	if (
+		compareAngles(angle(w / 2, h / 2, mousePos.x, mousePos.y), player.rot) <
+		turnSpeed
+	) {
+		player.rot = angle(w / 2, h / 2, mousePos.x, mousePos.y)
+	} else {
+		player.rot += turn * turnSpeed
+	}
+
 	// if (keysdown["ArrowLeft"]) {
 	// 	player.rotThrust -= speed * 0.7
 	// }
@@ -1084,6 +1291,13 @@ function updatePlayer() {
 	// }
 	player.mot.x += player.thrust.x
 	player.mot.y += player.thrust.y
+
+	if (getPlayerSpeed() > 299792) {
+		let factor = getPlayerSpeed() / 299792
+		player.mot.x *= 1 / factor
+		player.mot.y *= 1 / factor
+	}
+
 	player.x += player.mot.x
 	player.y += player.mot.y
 	// player.rot += player.rotThrust
@@ -1092,11 +1306,11 @@ function updatePlayer() {
 	// player.rotThrust *= 0.9 + (player.shipOpts.wings.isDead ? 0.019 : 0)
 	// Math.abs(player.rotThrust) < 0.001 ? (player.rotThrust = 0) : null
 
-	checkCollisions(player)
+	checkCollisions(player, true)
 }
 var bulletHits = []
 var bulletHitsSmoke = []
-function checkCollisions(ship) {
+function checkCollisions(ship, ignoreBroken) {
 	Object.entries(bullets)
 		.filter(entry => entry[0] != ship.seed)
 
@@ -1110,47 +1324,59 @@ function checkCollisions(ship) {
 				let x = Math.cos(ang - ship.rot + Math.PI * 0.5) * dis
 				let y = Math.sin(ang - ship.rot + Math.PI * 0.5) * dis
 				let wings = ship.shipOpts.wings
-				if (!wings.isDead && c.isPointInPath(wings.path, x, y)) {
+				if (
+					(!wings.isDead || ignoreBroken) &&
+					c.isPointInPath(wings.path, x, y)
+				) {
 					bulletsOfSeed.splice(i, 1)
 					wings.hitMaskPath.moveTo(x, y)
-					wings.hitMaskPath.arc(x, y, 0.05 * Math.random(), 0, 8)
+					wings.hitMaskPath.arc(x, y, 0.15 * Math.random(), 0, 8)
 					wings.hp = Math.max(0, wings.hp - bullet[4])
 					wings.isHit = 15
 					addBulletHit(x, y, ship)
-					addBulletHitSmoke(bullet[0], bullet[1], bulletColors[seed])
+					addBulletHitSmoke(bullet[0], bullet[1], getBulletColor(seed))
 					continue
 				}
 				let thrust = ship.shipOpts.thrust
-				if (!thrust.isDead && c.isPointInPath(thrust.path, x, y)) {
+				if (
+					(!thrust.isDead || ignoreBroken) &&
+					c.isPointInPath(thrust.path, x, y)
+				) {
 					bulletsOfSeed.splice(i, 1)
 					thrust.hitMaskPath.moveTo(x, y)
-					thrust.hitMaskPath.arc(x, y, 0.05 * Math.random(), 0, 8)
+					thrust.hitMaskPath.arc(x, y, 0.15 * Math.random(), 0, 8)
 					thrust.hp = Math.max(0, thrust.hp - bullet[4])
 					thrust.isHit = 15
 					addBulletHit(x, y, ship)
-					addBulletHitSmoke(bullet[0], bullet[1], bulletColors[seed])
+					addBulletHitSmoke(bullet[0], bullet[1], getBulletColor(seed))
 					continue
 				}
 				let weapon = ship.shipOpts.weapons
-				if (!weapon.isDead && c.isPointInPath(weapon.colPath, x, y)) {
+				if (
+					(!weapon.isDead || ignoreBroken) &&
+					c.isPointInPath(weapon.colPath, x, y)
+				) {
 					bulletsOfSeed.splice(i, 1)
 					weapon.hitMaskPath.moveTo(x, y)
-					weapon.hitMaskPath.arc(x, y, 0.05 * Math.random(), 0, 8)
+					weapon.hitMaskPath.arc(x, y, 0.15 * Math.random(), 0, 8)
 					weapon.hp = Math.max(0, weapon.hp - bullet[4])
 					weapon.isHit = 15
 					addBulletHit(x, y, ship)
-					addBulletHitSmoke(bullet[0], bullet[1], bulletColors[seed])
+					addBulletHitSmoke(bullet[0], bullet[1], getBulletColor(seed))
 					continue
 				}
 				let hull = ship.shipOpts.hull
-				if (!hull.isDead && c.isPointInPath(hull.path, x, y)) {
+				if (
+					(!hull.isDead || ignoreBroken) &&
+					c.isPointInPath(hull.path, x, y)
+				) {
 					bulletsOfSeed.splice(i, 1)
 					hull.hitMaskPath.moveTo(x, y)
-					hull.hitMaskPath.arc(x, y, 0.05 * Math.random(), 0, 8)
+					hull.hitMaskPath.arc(x, y, 0.15 * Math.random(), 0, 8)
 					hull.hp = Math.max(0, hull.hp - bullet[4])
 					hull.isHit = 15
 					addBulletHit(x, y, ship)
-					addBulletHitSmoke(bullet[0], bullet[1], bulletColors[seed])
+					addBulletHitSmoke(bullet[0], bullet[1], getBulletColor(seed))
 				}
 			}
 		})
@@ -1169,7 +1395,7 @@ function addBrokenComponent(x, y, size, rot, component) {
 		Math.random() * 8,
 		Math.random() * 1,
 		component,
-		50
+		250
 	])
 }
 function renderBrokenComponents() {
@@ -1187,7 +1413,7 @@ function renderBrokenComponents() {
 			component[0] += Math.cos(component[4]) * component[5]
 			component[1] += Math.sin(component[4]) * component[5]
 			component[3] += 0.04
-			component[2] *= 0.97
+			component[2] *= 0.99
 		} else {
 			brokenComponents.splice(i, 1)
 		}
@@ -1222,6 +1448,7 @@ function addBulletHitSmoke(x, y, color) {
 }
 function renderTrailSmoke() {
 	c.fillStyle = "rgba(255,255,55,0.3)"
+	c.beginPath()
 	for (let i = trailSmoke.length - 1; i >= 0; i--) {
 		if (--trailSmoke[i][3] > 0) {
 			trailSmoke[i][0] -= (Math.cos(trailSmoke[i][2]) * trailSmoke[i][4]) / 100
@@ -1231,11 +1458,14 @@ function renderTrailSmoke() {
 			let onsc = getOnScreenPos(trailSmoke[i][0], trailSmoke[i][1])
 			let siz = ((0.3 * trailSmoke[i][3]) / 100) * zoom
 
-			c.fillRect(onsc.x - siz / 2, onsc.y - siz / 2, siz, siz)
+			c.moveTo(onsc.x, onsc.y)
+			c.arc(onsc.x, onsc.y, siz, 0, 8)
 		} else {
 			trailSmoke.splice(i, 1)
 		}
 	}
+	c.fill()
+	c.closePath()
 }
 function renderBulletHits() {
 	for (let i = bulletHits.length - 1; i >= 0; i--) {
@@ -1245,7 +1475,7 @@ function renderBulletHits() {
 			let x = Math.cos(ang + Math.PI * 0.5 + bulletHits[i][3].rot) * dis
 			let y = Math.sin(ang + Math.PI * 0.5 + bulletHits[i][3].rot) * dis
 			let pos = getOnScreenPos(bulletHits[i][3].x + x, bulletHits[i][3].y + y)
-			hitExplosion(pos, 0.01 * Math.min(15, zoom))
+			hitExplosion(pos, 0.02 * Math.min(15, zoom))
 		} else {
 			bulletHits.splice(i, 1)
 		}
@@ -1256,10 +1486,9 @@ function renderBulletHits() {
 		if (bulletHitsSmoke[i][2]--) {
 			let bullet = bulletHitsSmoke[i]
 			c.fillStyle = bullet[3]
-			let pos = getOnScreenPos(bullet[0], bullet[1])
 
 			let onsc = getOnScreenPos(bullet[0], bullet[1])
-			let siz = bullet[2] / 60
+			let siz = bullet[2] / 20
 			c.fillRect(
 				onsc.x - (siz / 2) * zoom,
 				onsc.y - (siz / 2) * zoom,
@@ -1329,7 +1558,14 @@ function updatePlayerGrav(opts) {
 	// c.stroke()
 	// c.closePath()
 }
-function drawPlanet(planet, onScreenPos) {
+function drawPlanet(planet) {
+	let planetPos = getPlanetPos(planet, time)
+	let playerDis = distPoints(planetPos, player)
+	let onScreenPos = getOnScreenPos(planetPos.x, planetPos.y)
+	if (distPoints(onScreenPos, mousePos) < planet.rad * zoom) {
+		console.log("hovered")
+		hoveredPlanet = planet
+	}
 	let ang = planet.startAng + time * planet.spd
 	c.save()
 	c.beginPath()
@@ -1339,16 +1575,72 @@ function drawPlanet(planet, onScreenPos) {
 	c.closePath()
 	c.clip()
 	c.beginPath()
+
 	c.fillStyle = "rgba(255,255,255,0.5)"
-	c.arc(
-		onScreenPos.x - Math.cos(ang) * planet.rad * zoom * 1.7,
-		onScreenPos.y - Math.sin(ang) * planet.rad * zoom * 1.7,
-		planet.rad * zoom * 2,
-		0,
-		8
-	)
+	let offX = onScreenPos.x - Math.cos(ang) * planet.rad * zoom * 1.7
+	let offY = onScreenPos.y - Math.sin(ang) * planet.rad * zoom * 1.7
+	if (zoom > 0.05) {
+		let rgr = c.createRadialGradient(
+			offX,
+			offY,
+			0,
+			offX,
+			offY,
+			planet.rad * zoom * 3
+		)
+		rgr.addColorStop(0, "rgba(255,255,255,0.5)")
+		rgr.addColorStop(0, "rgba(255,255,255,0.5)")
+		rgr.addColorStop(1, "rgba(0,0,0,0)")
+		c.fillStyle = rgr
+	}
+	c.arc(offX, offY, planet.rad * zoom * 2, 0, 8)
 	c.closePath()
 	c.fill()
+	if (playerDis < planet.rad * 2) {
+		let playerOnscreen = getOnScreenPos(player.x, player.y)
+
+		if (!player.isDead) {
+			renderShip(
+				c,
+				playerOnscreen.x + Math.cos(ang) * Math.sqrt(playerDis * 150 + 150),
+				playerOnscreen.y + Math.sin(ang) * Math.sqrt(playerDis * 150 + 150),
+				0.95, //* Math.max(0, 1 - playerDis / planet.rad),
+				player.shipOpts,
+				zoom,
+				player.rot,
+				0,
+				0,
+				false,
+				false,
+				false,
+				false,
+				planet.col
+			)
+		}
+	}
+	activeEnemies.forEach(enemy => {
+		let enemyDis = distPoints(planetPos, enemy)
+		if (enemyDis < planet.rad * 2) {
+			let enemyOnscreen = getOnScreenPos(enemy.x, enemy.y)
+
+			renderShip(
+				c,
+				enemyOnscreen.x + Math.cos(ang) * Math.sqrt(enemyDis * 150 + 150),
+				enemyOnscreen.y + Math.sin(ang) * Math.sqrt(enemyDis * 150 + 150),
+				enemy.size * 0.95, //* Math.max(0, 1 - playerDis / planet.rad),
+				enemy.shipOpts,
+				zoom,
+				enemy.rot,
+				0,
+				0,
+				true,
+				false,
+				false,
+				false,
+				planet.col
+			)
+		}
+	})
 	c.restore()
 }
 var quadrantCache = {}
@@ -1368,9 +1660,9 @@ function getStarCol(zoomRad, a, rn1, rn2) {
 }
 
 function getPlanetColor(rn) {
-	let col = Math.min(255, Math.floor(rn() * 255))
-	let col2 = Math.min(255, Math.floor(rn() * 255))
-	let col3 = Math.min(255, Math.floor(rn() * 255))
+	let col = Math.min(255, Math.floor(rn() * 75))
+	let col2 = Math.min(255, Math.floor(rn() * 75))
+	let col3 = Math.min(255, Math.floor(rn() * 75))
 	return "rgba(" + col + "," + col2 + "," + col3 + "," + 1 + ")"
 }
 
@@ -1440,7 +1732,7 @@ function getGalaxyOpts(x, y) {
 		} else {
 			console.log([x, y], seed)
 		}
-		let starRad = 30 + 60 * rn()
+		let starRad = 60 + 60 * rn()
 		let offsetX =
 			(Math.sign(rn() - rn()) * 0.1 + (rn() - rn()) * 0.2) * quadrantSize
 		let offsetY =
@@ -1462,7 +1754,7 @@ function getGalaxyOpts(x, y) {
 		let curDis = 2 * starRad
 
 		for (let i = 0; i < planetAmount && curDis < maxRadOfGalaxy; i++) {
-			let rad = 6 + 10 * rn()
+			let rad = 15 + 15 * rn()
 			let dist = Math.max(
 				rad * 2 + rad * rn(),
 				((maxRadOfGalaxy - curDis - rad * 2) / (planetAmount - i)) * rn()
@@ -1512,38 +1804,46 @@ function getEnemies(x, y) {
 		enemyCache[x] = {}
 	}
 	if (!enemyCache[x].hasOwnProperty(y)) {
+		console.log("Actived Enemies in " + x + "," + y)
 		enemyCache[x][y] = []
 		// let enemyOpts = getEnemyOpts()
 		let galaxy = getGalaxyOpts(x, y)
 		let seed = galaxy.seed
 		let rn = getNewRng(seed)
-		let shipAmount = Math.ceil(5 + rn() * 8)
+		let shipAmount = Math.ceil(3 + (rn() * 12 * player.level) / 500)
 		let enemyOpts = getEnemyOpts(rn, seed)
-		enemyOpts.galaxy = galaxy
+		console.log("enemyStats: " + enemyOpts)
 		console.log(enemyOpts)
+		enemyOpts.galaxy = galaxy
 		for (let i = 0; i < shipAmount; i++) {
 			let newEn = new Enemy(enemyOpts)
 			enemyCache[x][y].push(newEn)
-			if (!isFinite(newEn.x)) {
-				console.log(123123)
-			}
 		}
 	}
 
 	return enemyCache[x][y]
 }
+
 function getEnemyOpts(rn, seed) {
+	let lvl = Math.min(500, player.level) / 500
+	const shotDis = 20 + lvl * rn() * (200 - 20)
+	const shotSpeed = 0.01 + 0.19 * lvl * rn()
+	const shotLife = shotDis / shotSpeed
+
 	return {
 		seed: seed,
-		shotDis: 20 + 40 * rn(),
-		turnSpeed: 0.001 + 0.004 * rn(),
-		speed: 0.0005 + 0.002 * rn(),
-		enemyDistance: 50 + rn() * 50,
-		dmg: Math.floor(1 + 10 * rn()),
-		fireRate: Math.floor(25, rn() * 100),
-		shotSpeed: 0.04 + rn() * 0.05,
+		shotDis: shotDis,
+		turnSpeed: 0.05 + lvl * 0.04 * rn(),
+		turnStability: 0.95,
+		speed: 0.001 + (0.1 - 0.001) * lvl * rn(),
+		enemyDistance: Math.max(75, shotLife * shotSpeed * (1 + rn())),
+		dmg: 1 + lvl * 1000 * rn(),
+		fireRate:
+			60 - Math.ceil((Math.log(1 + player.level) / Math.log(501)) * 59 * rn()),
+		shotSpeed: shotSpeed,
 		size: 1 + rn() * 1,
-		shotLife: 500 + rn() * 500
+		shotLife: shotLife,
+		shotCd: 0
 	}
 }
 export function getPlanetPos(planet, time) {
@@ -1606,6 +1906,18 @@ function getGalaxyName(rn) {
 	str += rn() > 0.5 ? " " + rnRoman(rn()) : ""
 	return str
 }
+function getRaceName(rn) {
+	let str = ""
+	for (let i = Math.round(rn()); i < 3 + rn() * 3; i++) {
+		let letter =
+			(i + 1) % 2
+				? vowel[Math.floor(rn() * (vowel.length - 0.1))]
+				: consonant[Math.floor(rn() * (consonant.length - 0.1))]
+		str += str.length == 0 ? letter : letter.toLowerCase()
+	}
+	str += rn() > 0.5 ? "ian" : "ord"
+	return str
+}
 
 var vowel = "AEIOUY"
 var consonant = "BCDFGHJKLMNPQRSTVWXY"
@@ -1613,14 +1925,19 @@ var bulletColors = {}
 function getBulletColor(seed) {
 	if (!bulletColors.hasOwnProperty(seed)) {
 		let rn = getNewRng(seed)
-		bulletColors[seed] =
-			"rgba(" +
-			Math.floor(155 + 100 * rn()) +
-			"," +
-			Math.floor(155 + 100 * rn()) +
-			"," +
-			Math.floor(155 + 100 * rn()) +
-			",1)"
+		bulletColors[seed] = [
+			Math.floor(155 + 100 * rn()),
+			Math.floor(155 + 100 * rn()),
+			Math.floor(155 + 100 * rn())
+		]
+		// bulletColors[seed] =
+		// 	"rgba(" +
+		// 	Math.floor(155 + 100 * rn()) +
+		// 	"," +
+		// 	Math.floor(155 + 100 * rn()) +
+		// 	"," +
+		// 	Math.floor(155 + 100 * rn()) +
+		// 	",1)"
 	}
 	return bulletColors[seed]
 }
@@ -1640,6 +1957,21 @@ const drawHUD = (galaxy, enemies) => {
 	drawHudShip()
 
 	drawComponentHp()
+
+	if (debug) {
+		let stats = {
+			speed: player.speed,
+			turnSpeed: player.turnSpeed,
+			dmg: player.dmg,
+			fireRate: player.fireRate,
+			shotSpeed: player.shotSpeed,
+			shotDis: player.shotDis
+		}
+		ch.fillText("Player Stats", 20, 400)
+		Object.entries(stats).forEach((entry, i) => {
+			ch.fillText(entry[0] + ": " + entry[1], 20, 430 + i * 30)
+		})
+	}
 	// c.fillText("Health:", 30, 90)
 	// c.fillRect(30, 110, (100 * player.health) / 100, 20)
 	// c.strokeRect(30, 110, 100, 20)
@@ -1659,20 +1991,47 @@ function drawComponentHp() {
 	ch.textBaseline = "top"
 	ch.font = "bold 18px Arial"
 	ch.fontWeight = 800
+	let totHp = 0
+	let totMaxHp = 0
 	Object.entries(components).forEach(entry => {
+		totHp += player.shipOpts[entry[1]].hp
+		totMaxHp += player.shipOpts[entry[1]].maxHp
 		ch.fillStyle = "green"
 		ch.fillText(entry[0], x, y)
-		ch.strokeRect(x, y + 20, 100, 15)
+		ch.strokeRect(x, y + 20, 100, 10)
 		ch.fillStyle = getComponentColor(player.shipOpts[entry[1]])
-		ch.fillRect(x, y + 20, (100 * player.shipOpts[entry[1]].hp) / 100, 15)
+		ch.fillRect(
+			x,
+			y + 20,
+			(100 * player.shipOpts[entry[1]].hp) / player.shipOpts[entry[1]].maxHp,
+			10
+		)
 		y += 55
 	})
+
+	ch.strokeRect(50, 35, 200, 12)
+	ch.fillRect(
+		50,
+		35,
+		(200 * player.shipOpts.hull.hp) / player.shipOpts.hull.maxHp,
+		12
+	)
+
+	y -= 55
+	ch.fillStyle =
+		"rgba(200,200,50," +
+		(0.5 + (0.5 - (0.5 * player.shotCd) / player.fireRate)) +
+		")"
+	ch.strokeRect(x, y + 30, 100, 4)
+	ch.fillRect(x, y + 30, 100 - (100 * player.shotCd) / player.fireRate, 4)
 }
 var blinkTick = 0
 function drawHudShip() {
 	ch.strokeStyle = "green"
+	ch.fillStyle = "black"
 	ch.lineWidth = 2
 	ch.strokeRect(25, 25, 400, 300)
+	ch.fillRect(25, 25, 400, 300)
 
 	ch.save()
 	ch.translate(150, 175)
@@ -1807,8 +2166,13 @@ function drawRadar(galaxy, enemies) {
 	blinkTick++
 	let x = w - 330 + 150
 	let y = 25 + 150
+	ch.save()
 	ch.fillStyle = "black"
-	ch.fillRect(x - 150, y - 150, 300, 300)
+	ch.beginPath()
+	ch.rect(x - 150, y - 150, 300, 300)
+	ch.clip()
+	ch.fill()
+	ch.closePath()
 	ch.fillStyle = "green"
 	ch.strokeRect(x - 150, y - 150, 300, 300)
 
@@ -1862,7 +2226,13 @@ function drawRadar(galaxy, enemies) {
 	let px = getRadarX(player.x)
 	let py = getRadarY(player.y)
 	ch.beginPath()
-	ch.arc(px, py, 2 + (3 * Math.abs((blinkTick % 200) - 100)) / 100, 0, 8)
+	ch.arc(
+		Math.max(x - 150, Math.min(x + 150, px)),
+		Math.max(y - 150, Math.min(y + 150, py)),
+		2 + (3 * Math.abs((blinkTick % 200) - 100)) / 100,
+		0,
+		8
+	)
 	ch.closePath()
 	ch.fill()
 
@@ -1897,21 +2267,18 @@ function drawRadar(galaxy, enemies) {
 		ch.fillText(tx, w - 175 - wd / 2, 300)
 		// ch.fillText(enemies.length, w - 175 - wd / 2, 350)
 	}
+	ch.restore()
 }
 function drawSpeedAndDirection(galaxyOpts, enemies) {
 	let x = (ch.fillStyle = "green")
-	let playerSpeed =
-		Math.floor(1e5 * dist(0, 0, player.mot.x, player.mot.y)) / 10
+	let playerSpeed = getPlayerSpeed()
 	ch.font = "bold 17px Arial"
-	let tx =
-		"Current Speed: " +
-		(playerSpeed > 1000
-			? Math.floor((10 * playerSpeed) / 1000) / 10 + "km/s"
-			: playerSpeed + "m/s")
+	let tx = "Current Speed: " + playerSpeed + "km/s"
+
 	let wd = ch.measureText(tx).width
 	ch.fillText(tx, w / 2 - wd / 2, 280)
 
-	let dis = dist(0, 0, player.mot.x, player.mot.y)
+	let dis = Math.min(45, 50 * dist(0, 0, player.mot.x, player.mot.y))
 	let ang = angle(0, 0, player.mot.x, player.mot.y)
 
 	ch.fillStyle = "black"
@@ -1939,11 +2306,11 @@ function drawSpeedAndDirection(galaxyOpts, enemies) {
 	ch.lineWidth = 2
 	ch.beginPath()
 	ch.moveTo(w / 2, 175)
-	ch.lineTo(w / 2 + Math.cos(ang) * dis * 100, 175 + Math.sin(ang) * dis * 100)
+	ch.lineTo(w / 2 + Math.cos(ang) * dis, 175 + Math.sin(ang) * dis)
 	drawEvenTriangle(
 		ch,
-		w / 2 + Math.cos(ang) * (dis * 100 + 7.5),
-		175 + Math.sin(ang) * (dis * 100 + 7.5),
+		w / 2 + Math.cos(ang) * (dis + 7.5),
+		175 + Math.sin(ang) * (dis + 7.5),
 		10,
 		ang
 	)
@@ -1953,18 +2320,24 @@ function drawSpeedAndDirection(galaxyOpts, enemies) {
 	ch.restore()
 }
 
+function getPlayerSpeed() {
+	return Math.floor(1000 * dist(0, 0, player.mot.x, player.mot.y)) / 10
+}
+
 function getComponentColor(component) {
-	if (component.isHit) {
+	if (component.isDead) {
+		return "grey"
+	} else if (component.isHit) {
 		component.isHit--
 		return "red"
 	} else {
 		return (
 			"rgba(" +
-			(237 - (237 * component.hp) / 100) +
+			(207 - (207 * component.hp) / component.maxHp) +
 			"," +
-			(41 + (214 * component.hp) / 100) +
+			(41 + (204 * component.hp) / component.maxHp) +
 			"," +
-			(56 + (71 * component.hp) / 100) +
+			(56 + (61 * component.hp) / component.maxHp) +
 			",1)"
 		)
 	}

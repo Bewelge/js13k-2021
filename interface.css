@@ -136,24 +136,13 @@ label {
 	align-items: center;
 	min-width: 300px;
 }
-.col > canvas {
-}
 .comp {
 	background-color: rgba(70, 70, 70, 1);
 }
 .comp.clickable:hover {
 	background-color: rgba(50, 50, 50, 1);
 }
-.comp:hover {
-	/* background: radial-gradient(
-		rgba(255, 255, 255, 0.5) 0%,
-		rgba(255, 255, 255, 0.5) 50%,
-		rgba(255, 255, 255, 0.1) 50%,
-		transparent 55%
-	); */
-}
 .comp.selected {
-	/* border: 3px solid green; */
 	box-shadow: inset 0 0 0px 5px white;
 }
 .statRow {
@@ -181,8 +170,6 @@ label {
 	white-space: nowrap;
 	text-align: center;
 	flex-grow: 1;
-}
-.statCol {
 }
 
 .statRow .statName2 {

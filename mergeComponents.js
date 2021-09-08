@@ -1,3 +1,4 @@
+import { components } from "./components.js"
 import {
 	getMergedHull,
 	getMergedThrust,
@@ -11,63 +12,47 @@ import {
 	renderWeapons,
 	renderWings
 } from "./ShipRender.js"
+import {
+	appendChildren,
+	createCnv,
+	createDialog,
+	createDiv,
+	getButton,
+	subTitleDiv,
+	titleDiv
+} from "./Util.js"
 
 export const openWindow = (player, enemy, callback) => {
-	let createDiv = className => {
-		let div = document.createElement("div")
-		div.className = className
-		return div
-	}
 	let scale = Math.min(150, Math.max(30, window.innerWidth / 8))
 
-	let dialog = createDiv("dialog")
-
+	let dialog = createDialog()
 	let cont = createDiv("cont")
-	let title = createDiv("title")
 
-	title.innerHTML = "Assimilation"
-	let subTitle = createDiv("subTitle")
-	subTitle.innerHTML =
-		"You destroyed all of the " + enemy.race + "s. Now steal their tech."
-	let subTitle2 = createDiv("subTitle")
-	subTitle2.innerHTML = "Click Ship parts on the right to assimilate"
-
-	dialog.appendChild(title)
-	dialog.appendChild(subTitle)
+	dialog.appendChild(titleDiv("Assimilation"))
+	dialog.appendChild(
+		subTitleDiv(
+			"You destroyed all of the " + enemy.race + "s. Now steal their tech."
+		)
+	)
 	dialog.appendChild(cont)
-	dialog.appendChild(subTitle2)
+	dialog.appendChild(subTitleDiv("Click Ship parts on the right to assimilate"))
 
 	let ship0 = createDiv("col")
 	let components0 = createDiv("col")
 	let stats = createDiv("colWide")
-	let stats2 = createDiv("col")
 	let ship1 = createDiv("col")
 	let components1 = createDiv("col")
 
-	let ship0Cnv = document.createElement("canvas")
-	ship0Cnv.width = scale
-	ship0Cnv.height = scale * 2
+	let ship0Cnv = createCnv(scale, scale * 2)
 	let cShip0 = ship0Cnv.getContext("2d")
-	// let ship00Cnv = document.createElement("canvas")
-	// ship00Cnv.width = 150
-	// ship00Cnv.height = 300
-	// let cShip00 = ship00Cnv.getContext("2d")
+	let ship1Cnv = createCnv(scale, scale * 2)
+	let cShip1 = ship1Cnv.getContext("2d")
+
+	ship0.appendChild(ship0Cnv)
+	ship1.appendChild(ship1Cnv)
 
 	let isClosed = false
 
-	// renderShip(
-	// 	cShip00,
-	// 	75,
-	// 	75,
-	// 	30,
-	// 	player.shipOpts,
-	// 	1,
-	// 	-Math.PI * 0.5,
-	// 	-Math.PI * 0.5,
-	// 	0.1,
-	// 	false,
-	// 	true
-	// )
 	let curOpts = {
 		hull: player.shipOpts.hull,
 		wings: player.shipOpts.wings,
@@ -75,29 +60,7 @@ export const openWindow = (player, enemy, callback) => {
 		thrust: player.shipOpts.thrust
 	}
 
-	ship0.appendChild(ship0Cnv)
-	// ship0.appendChild(ship00Cnv)
-
-	let ship1Cnv = document.createElement("canvas")
-	ship1Cnv.width = scale
-	ship1Cnv.height = scale * 2
-	let cShip1 = ship1Cnv.getContext("2d")
-	// renderShip(
-	// 	cShip1,
-	// 	75,
-	// 	150,
-	// 	40,
-	// 	enemy.shipOpts,
-	// 	1,
-	// 	-Math.PI * 0.5,
-	// 	-Math.PI * 0.5,
-	// 	0.1,
-	// 	false,
-	// 	true
-	// )
-	ship1.appendChild(ship1Cnv)
-
-	let renderCurShip = opts => {
+	const renderCurShip = opts => {
 		cShip0.clearRect(0, 0, scale, scale * 2)
 		cShip1.clearRect(0, 0, scale, scale * 2)
 		renderShip(
@@ -133,104 +96,17 @@ export const openWindow = (player, enemy, callback) => {
 	}
 
 	renderCurShip(curOpts)
-	let comps = {
-		weapons: {
-			statDivs: {},
-			statVals: {},
-			statChangeDivs: {},
-			formatters: {
-				"Fire Rate": val => formatNum(60 / val, 3),
-				"Shot Speed": val => formatNum(100 * val, 1)
-			},
-			suffixes: {
-				"Fire Rate": "/s",
-				"Shot Speed": "km/s"
-			},
-			stats: {
-				HP: player.shipOpts.weapons.maxHp,
-				"Fire Rate": player.fireRate,
-				Damage: player.dmg,
-				"Shot Speed": player.shotSpeed,
-				Range: player.shotLife * player.shotSpeed
-			},
-			statsEnemy: {
-				HP: enemy.shipOpts.weapons.maxHp,
-				"Fire Rate": enemy.fireRate,
-				Damage: enemy.dmg,
-				"Shot Speed": enemy.shotSpeed,
-				Range: enemy.shotLife * enemy.shotSpeed
-			},
-			render: (c, opts) => {
-				c.save()
-				c.translate(0, ((1 / (scale / 5)) * scale) / 5)
-				renderWeapons(c, opts, 0.5, 0.5)
-				c.restore()
-			},
-			getMerged: (opts1, opts2, tween) =>
-				getMergedWeapons(opts1.weapons, opts2.weapons, tween)
-		},
-		hull: {
-			statDivs: {},
-			statVals: {},
-			statChangeDivs: {},
-			stats: {
-				HP: player.shipOpts.hull.maxHp
-			},
-			statsEnemy: {
-				HP: enemy.shipOpts.hull.maxHp
-			},
-			render: (c, opts) => renderHull(opts, c, 0.5, 0.5),
-			getMerged: (opts1, opts2, tween) =>
-				getMergedHull(opts1.hull, opts2.hull, tween)
-		},
-		wings: {
-			formatters: {
-				"Turn Speed": val => formatNum(100 * val, 3)
-			},
-			statDivs: {},
-			statVals: {},
-			statChangeDivs: {},
-			stats: {
-				HP: player.shipOpts.wings.maxHp,
 
-				"Turn Speed": player.turnSpeed
-			},
-			statsEnemy: {
-				HP: enemy.shipOpts.wings.maxHp,
-				"Turn Speed": enemy.turnSpeed
-			},
-			render: (c, opts) => renderWings(opts, c, 0.5, 0.5),
-			getMerged: (opts1, opts2, tween) =>
-				getMergedWings(curOpts.hull.h, opts1.wings, opts2.wings, tween)
-		},
-		thrust: {
-			formatters: {
-				"Thrust Speed": val => formatNum(1000 * val, 3)
-			},
-			statDivs: {},
-			statVals: {},
-			statChangeDivs: {},
-			stats: {
-				HP: player.shipOpts.wings.maxHp,
-				"Thrust Speed": player.speed
-			},
-			statsEnemy: {
-				HP: enemy.shipOpts.wings.maxHp,
-				"Thrust Speed": enemy.speed
-			},
-			render: (c, opts) => {
-				c.save()
-				c.translate(0, -((1 / (scale / 5)) * scale) / 4)
-				renderThrust(opts, c, 0.5, 0.5, true)
-				c.restore()
-			},
-			getMerged: (opts1, opts2, tween) =>
-				getMergedThrust(curOpts.hull, opts1.thrust, opts2.thrust, tween)
-		}
-	}
+	let comps = components
+	Object.values(comps).forEach(comp => {
+		comp.statDivs = {}
+		comp.statVals = {}
+		comp.statChangeDivs = {}
+	})
+
 	Object.keys(comps).forEach(compName => {
 		let compDiv0 = createDiv("comp")
-		let compImg0 = getCompCanvas(scale)
+		let compImg0 = createCnv(scale, scale)
 		let c0 = compImg0.getContext("2d")
 		c0.translate(scale / 2, scale / 2)
 		c0.scale(scale / 5, scale / 5)
@@ -243,14 +119,17 @@ export const openWindow = (player, enemy, callback) => {
 		let statColName = createDiv("statCol")
 		let statColEmpty = createDiv("statCol")
 		let statCol1 = createDiv("statCol")
-		compStats0.appendChild(statCol0)
-		compStats0.appendChild(statColChange)
-		compStats0.appendChild(statColName)
-		compStats0.appendChild(statColEmpty)
-		compStats0.appendChild(statCol1)
+		appendChildren(compStats0, [
+			statCol0,
+			statColChange,
+			statColName,
+			statColEmpty,
+			statCol1
+		])
+
 		Object.entries(comps[compName].stats).forEach(entry => {
 			let statName = entry[0]
-			let val = entry[1]
+			let val = entry[1](player)
 
 			let divVal = createDiv("statValue")
 			let divValChange = createDiv("statValueChange")
@@ -259,44 +138,27 @@ export const openWindow = (player, enemy, callback) => {
 			let divName = createDiv("statName")
 			divName.innerHTML = statName
 
-			comps[compName].statDivs[entry[0]] = divVal
-			comps[compName].statChangeDivs[entry[0]] = divValChange
+			comps[compName].statDivs[statName] = divVal
+			comps[compName].statChangeDivs[statName] = divValChange
 			divValChange.innerHTML = "(+0)"
-			comps[compName].statVals[entry[0]] = val
+			comps[compName].statVals[statName] = val
 			divVal.innerHTML = getFormattedStat(comps[compName], statName, val)
 			divValEnemy.innerHTML = getFormattedStat(
 				comps[compName],
 				statName,
-				comps[compName].statsEnemy[statName]
+				entry[1](enemy)
 			)
 
 			statCol0.appendChild(divVal)
 			statColChange.appendChild(divValChange)
 			statColName.appendChild(divName)
 			statCol1.appendChild(divValEnemy)
-			// compStats0.appendChild(statRow)
 		})
-		// let compStats1 = createDiv("comp")
-		// Object.entries(comps[compName].statsEnemy).forEach(entry => {
-		// 	let statRow = createDiv("statRow")
-
-		// 	let statName = entry[0]
-		// 	let val = entry[1]
-
-		// 	let divName = createDiv("statName2")
-		// 	divName.innerHTML = statName
-		// 	let divVal = createDiv("statValue2")
-		// 	divVal.innerHTML = getFormattedStat(comps[compName], statName, val)
-
-		// 	statRow.appendChild(divVal)
-		// 	statRow.appendChild(divName)
-		// 	compStats1.appendChild(statRow)
-		// })
 
 		let compDiv1 = createDiv("comp clickable")
-		let compImg1 = getCompCanvas(scale)
-
+		let compImg1 = createCnv(scale, scale)
 		let c1 = compImg1.getContext("2d")
+
 		c1.translate(scale / 2, scale / 2)
 		c1.scale(scale / 5, scale / 5)
 		comps[compName].render(c1, enemy.shipOpts)
@@ -316,20 +178,12 @@ export const openWindow = (player, enemy, callback) => {
 
 		components0.appendChild(compDiv0)
 		stats.appendChild(compStats0)
-		// stats2.appendChild(compStats1)
 		components1.appendChild(compDiv1)
 	})
 
-	cont.appendChild(ship0)
-	cont.appendChild(components0)
-	cont.appendChild(stats)
-	// cont.appendChild(stats2)
-	cont.appendChild(components1)
-	cont.appendChild(ship1)
+	appendChildren(cont, [ship0, components0, stats, components1, ship1])
 
-	let confirmBut = document.createElement("Button")
-	confirmBut.innerHTML = "Confirm"
-	confirmBut.onclick = () => {
+	let confirmBut = getButton("Confirm", () => {
 		player.shipOpts = curOpts
 		dialog.style.height = "0%"
 		window.setTimeout(() => {
@@ -357,7 +211,8 @@ export const openWindow = (player, enemy, callback) => {
 				})
 			callback()
 		}, 300)
-	}
+	})
+
 	dialog.appendChild(confirmBut)
 
 	window.setTimeout(() => (dialog.style.height = "100%"), 50)
@@ -374,24 +229,24 @@ function getCompClickListener(
 	curOpts
 ) {
 	let tweenCounter = 50
-	let tweenTick = null
+	let comp = comps[compName]
 
-	tweenCounter = 50
 	let tween = (from, to) => {
 		if (from == undefined || to == undefined) return
 		merging = true
 		tweenCounter--
-		let merged = comps[compName].getMerged(
+
+		curOpts[compName] = comp.getMerged(
+			curOpts,
 			from,
 			to,
 			Math.max(0.5, tweenCounter / 50)
 		)
-		curOpts[compName] = merged
 
 		if (compName == "hull" || compName == "thrust") {
 			curOpts.thrust.top = curOpts.hull.h / 2
 			curOpts.thrust.w1 = curOpts.hull.bottomW
-			curOpts.thrust = comps.thrust.getMerged(curOpts, curOpts, 0.5)
+			curOpts.thrust = comps.thrust.getMerged(curOpts, curOpts, curOpts, 0.5)
 		}
 
 		c0.clearRect(-150, -150, 300, 300)
@@ -399,10 +254,9 @@ function getCompClickListener(
 		c0.shadowBlur = "15px"
 		c0.shadowColor = "red"
 
-		comps[compName].render(c0, curOpts)
-
+		comp.render(c0, curOpts)
 		c0.restore()
-		// comps[compName].render(c0, curOpts)
+
 		if (tweenCounter > 0) {
 			window.requestAnimationFrame(() => {
 				tween(from, to)
@@ -411,53 +265,50 @@ function getCompClickListener(
 			merging = false
 		}
 	}
+	let from, to
+	let getStatVal, getChange
 	if (compImg1.classList.contains("selected")) {
 		compImg1.classList.remove("selected")
-		comps[compName].selected = false
-		Object.entries(comps[compName].stats).forEach(entry => {
-			let statName = entry[0]
-			let comp = comps[compName]
-			comp.statDivs[statName].innerHTML = getFormattedStat(
-				comp,
-				statName,
-				comp.statVals[statName]
-			)
-			comp.statChangeDivs[statName].innerHTML = "(+0)"
-			comp.statChangeDivs[statName].className = ""
-		})
-		tween(curOpts, player.shipOpts)
+		comp.selected = false
+		getStatVal = stat => comp.stats[stat](player)
+		getChange = () => 0
+		from = curOpts
+		to = player.shipOpts
 	} else {
-		compImg1.classList.add("selected")
-		comps[compName].selected = true
 		tweenCounter = 50
-		Object.entries(comps[compName].stats).forEach(entry => {
-			let statName = entry[0]
-			let comp = comps[compName]
-			comp.statDivs[statName].innerHTML = getFormattedStat(
-				comp,
-				statName,
-				(comp.statVals[statName] + comp.statsEnemy[statName]) / 2
-			)
+		compImg1.classList.add("selected")
+		comp.selected = true
+		getStatVal = stat =>
+			(comp.stats[stat](player) + comp.stats[stat](enemy)) / 2
+		getChange = statName => {
+			let stat = comp.stats[statName]
+			stat(player)
 			let formatter =
 				comp.formatters && comp.formatters[statName]
 					? comp.formatters[statName]
 					: formatNum
-			let statChange =
-				formatter((comp.statVals[statName] + comp.statsEnemy[statName]) / 2) -
-				formatter(comp.statVals[statName])
-
-			statChange > 0
-				? (comp.statChangeDivs[statName].className = "plus")
-				: statChange < 0
-				? (comp.statChangeDivs[statName].className = "minus")
-				: (comp.statChangeDivs[statName].className = "")
-
-			comp.statChangeDivs[statName].innerHTML =
-				"(" + (statChange >= 0 ? "+" : "") + formatNum(statChange) + ")"
-		})
-		tween(player.shipOpts, enemy.shipOpts)
+			return (
+				formatter((stat(player) + stat(enemy)) / 2) - formatter(stat(player))
+			)
+		}
+		from = player.shipOpts
+		to = enemy.shipOpts
 	}
-	return { tweenCounter, tweenTick }
+	Object.entries(comp.stats).forEach(entry => {
+		let statName = entry[0]
+		comp.statDivs[statName].innerHTML = getFormattedStat(
+			comp,
+			statName,
+			getStatVal(statName)
+		)
+		let change = getChange(statName)
+
+		comp.statChangeDivs[statName].innerHTML =
+			"(" + (change >= 0 ? "+" : "") + formatNum(change) + ")"
+		comp.statChangeDivs[statName].className =
+			change > 0 ? "plus" : change < 0 ? "minus" : ""
+	})
+	tween(from, to)
 }
 
 function getFormattedStat(comp, statName, val) {
@@ -471,13 +322,7 @@ function getFormattedStat(comp, statName, val) {
 	return str + suffix
 }
 
-function getCompCanvas(scale) {
-	let compImg0 = document.createElement("canvas")
-	compImg0.height = scale
-	compImg0.width = scale
-	return compImg0
-}
-function formatNum(num, denom) {
+export function formatNum(num, denom) {
 	if (num == 0) return num
 	denom =
 		denom ||

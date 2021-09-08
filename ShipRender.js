@@ -1,4 +1,4 @@
-import { rgba } from "./Util.js"
+import { rgba, scaleRotate, translateToAndDraw } from "./Util.js"
 
 export const renderShip = (
 	c,
@@ -16,32 +16,30 @@ export const renderShip = (
 	isThrustRight,
 	overwriteFill
 ) => {
-	c.save()
-	c.translate(x, y)
-	c.scale(zoom * size, zoom * size)
-	c.rotate(rot + Math.PI * 0.5)
+	translateToAndDraw(c, x, y, () => {
+		scaleRotate(c, zoom * size, rot + Math.PI * 0.5)
 
-	if (!opts.weapons.isDead || !drawDmg) {
-		renderWeapons(c, opts, sunAng, sunDis, overwriteFill)
-	}
-	if (!opts.wings.isDead || !drawDmg) {
-		renderWings(
-			opts,
-			c,
-			sunAng,
-			sunDis,
-			isThrustLeft,
-			isThrustRight,
-			overwriteFill
-		)
-	}
-	if (!opts.hull.isDead || !drawDmg) {
-		renderHull(opts, c, sunAng, sunDis, overwriteFill)
-	}
-	if (!opts.thrust.isDead || !drawDmg) {
-		renderThrust(opts, c, sunAng, sunDis, isThrust, overwriteFill)
-	}
-	c.restore()
+		if (!opts.weapons.isDead || !drawDmg) {
+			renderWeapons(c, opts, sunAng, sunDis, overwriteFill)
+		}
+		if (!opts.wings.isDead || !drawDmg) {
+			renderWings(
+				opts,
+				c,
+				sunAng,
+				sunDis,
+				isThrustLeft,
+				isThrustRight,
+				overwriteFill
+			)
+		}
+		if (!opts.hull.isDead || !drawDmg) {
+			renderHull(opts, c, sunAng, sunDis, overwriteFill)
+		}
+		if (!opts.thrust.isDead || !drawDmg) {
+			renderThrust(opts, c, sunAng, sunDis, isThrust, overwriteFill)
+		}
+	})
 }
 export const renderThrust = (
 	opts,
@@ -164,39 +162,29 @@ export const renderWings = (
 		c.restore()
 	}
 
-	c.fillStyle = "rgba(255,55,55,0.8)"
+	if (isThrustLeft || isThrustRight) {
+		let x = 0
+		let y = 0
+		let drawThrust = () => {
+			c.fillRect(x, y, 0.1, Math.random() * 0.15 + 0.2)
+		}
 
-	if (isThrustLeft) {
-		c.fillRect(
-			(opts.wings.maxW / 2) * 0.8 - 0.1,
-			opts.wings.maxY,
-			0.1,
-			Math.random() * 0.15 + 0.1
-		)
-		c.fillStyle = "rgba(255,255,55,0.8)"
-
-		c.fillRect(
-			(opts.wings.maxW / 2) * 0.8 - 0.1,
-			opts.wings.maxY,
-			0.1,
-			Math.random() * 0.15 + 0.1
-		)
-	}
-	if (isThrustRight) {
-		c.fillRect(
-			(-opts.wings.maxW / 2) * 0.8,
-			opts.wings.maxY,
-			0.1,
-			Math.random() * 0.15 + 0.1
-		)
-		c.fillStyle = "rgba(255,255,55,0.8)"
-
-		c.fillRect(
-			(-opts.wings.maxW / 2) * 0.8,
-			opts.wings.maxY,
-			0.1,
-			Math.random() * 0.15 + 0.1
-		)
+		let dr = () => {
+			c.fillStyle = "rgba(255,55,55,0.8)"
+			drawThrust()
+			c.fillStyle = "rgba(255,255,55,0.8)"
+			drawThrust()
+		}
+		if (isThrustLeft) {
+			x = (opts.wings.maxW / 2) * 0.8 - 0.1
+			y = opts.wings.maxY
+			dr()
+		}
+		if (isThrustRight) {
+			x = (-opts.wings.maxW / 2) * 0.8
+			y = opts.wings.maxY
+			dr()
+		}
 	}
 }
 
@@ -204,36 +192,28 @@ export const renderWeapons = (c, opts, sunAng, sunDis, overwriteFill) => {
 	c.fillStyle = rgb(opts.weapons.color)
 
 	for (let i = 0; i < opts.weapons.amount; i++) {
-		c.save()
-		c.translate(
+		let drawAWeapon = () =>
+			shadePath(
+				c,
+				opts.weapons.path,
+				overwriteFill || rgb(opts.weapons.color),
+				overwriteFill || lighten(opts.weapons.color, 15),
+				sunAng,
+				sunDis * 0.4
+			)
+
+		translateToAndDraw(
+			c,
 			-opts.weapons.x - i * (opts.weapons.w + opts.weapons.margin),
-			opts.weapons.top
+			opts.weapons.top,
+			drawAWeapon
 		)
-		shadePath(
+		translateToAndDraw(
 			c,
-			opts.weapons.path,
-			overwriteFill || rgb(opts.weapons.color),
-			overwriteFill || lighten(opts.weapons.color, 15),
-			sunAng,
-			sunDis * 0.4
-		)
-		// c.fill(opts.weapons.path)
-		c.restore()
-		c.save()
-		c.translate(
 			opts.weapons.x + i * (opts.weapons.w + opts.weapons.margin),
-			opts.weapons.top
+			opts.weapons.top,
+			drawAWeapon
 		)
-		shadePath(
-			c,
-			opts.weapons.path,
-			overwriteFill || rgb(opts.weapons.color),
-			overwriteFill || lighten(opts.weapons.color, 15),
-			sunAng,
-			sunDis * 0.4
-		)
-		// c.fill(opts.weapons.path)
-		c.restore()
 	}
 }
 
@@ -250,11 +230,10 @@ function shadePath(c, path, color, shadeColor, shadeDirection, shadeOffset) {
 	c.fill(path)
 
 	c.strokeStyle = "rgba(255,255,255,0.4)"
-	// c.stroke(path)
 	c.restore()
 }
-export function rgb(arr) {
-	return rgba(arr[0], arr[1], arr[2], 1)
+export function rgb(arr, a = 1) {
+	return rgba(arr[0], arr[1], arr[2], a)
 }
 export function lighten(arr, amnt) {
 	return rgb(arr.map(num => Math.min(255, num + amnt)))

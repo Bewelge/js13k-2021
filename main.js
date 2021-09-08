@@ -1,4 +1,8 @@
+import { components, getComponentNames } from "./components.js"
 import { openWindow } from "./mergeComponents.js"
+import { getGalaxyName, getRaceName } from "./names.js"
+import { Particles } from "./particles.js"
+import { drawEvenTriangle, hitExplosion, renderBg } from "./render.js"
 import { getNewRng } from "./Rng.js"
 import { getShipOpts } from "./ship.js"
 import { renderShip, rgb } from "./ShipRender.js"
@@ -6,42 +10,99 @@ import {
 	angle,
 	anglePoints,
 	compareAngles,
+	createDialog,
+	disAngOrigin,
 	dist,
 	distPoints,
-	turnTowards
+	getButton,
+	getInRange,
+	posEquals,
+	createDiv,
+	subTitleDiv,
+	titleDiv,
+	turnTowards,
+	createCnv,
+	appendChildren,
+	posPlus,
+	posMult,
+	posPlusPos,
+	posPlusAng,
+	rndBtwn,
+	setFont,
+	setPos,
+	translateToAndDraw,
+	scaleRotate,
+	disAng,
+	line,
+	pos,
+	_posPlusAng,
+	_posMult
 } from "./Util.js"
 
 var paused = true
+
+const PIH = Math.PI / 2
+const PI2 = Math.PI * 2
+
+//REMOVE
 var debug = true
 document
 	.getElementById("debug")
 	.addEventListener("change", () => (debug = !debug))
+//REMOVE
 
 var w = window.innerWidth
 var h = window.innerHeight
-var cnv, c, cnv2, ch
+var cnv, cnv2, cnvH, c, ch
 
 var screenPos = { x: 0, y: 0 }
-var planetLock = null
-var homePlanet = null
-var trailSmoke = []
-var brokenComponents = []
 let randomStartSeed = Math.floor(Math.random() * 99999)
 console.log("Ship seed: " + randomStartSeed)
 var zoom = 25
 var quadrantSize = 3500
 var mousePos = { x: 0, y: 0 }
 var time = 0
-var zoomAim = null
 var keysdown = {}
 var mouseDown = false
 var bullets = {}
 var activeEnemies = new Set()
+var enemyLock
+var hoveredEnemy
 
+const ZOOM_MAX = 6000
+const ZOOM_MIN = 0.01
+var zoomHandleGrabbed = false
+var lastTime = window.performance.now()
+var timeUntilNextTick = 0
+var tickDur = 16
+var conqueredQuadrants = {} //TODO
+var hoveredGalaxy = null
+var hoveredPlanet = null
+var player = {}
+
+var playerPathCounter = 0
+var bulletHitsSmoke = []
+var quadrantCache = {}
+var discoveredGalaxies = {
+	0: { "-1": true }
+}
+var galaxyOptsCache = {}
+let seeds = {}
+var starImg
+var playerPath = []
+var enemyCache = {}
+var bulletColors = {}
+var blinkTick = 0
+
+var trailSmoke
+var bulletHits
+var bulletSmokes, brokenComponents
 function getNewPlayer() {
+	randomStartSeed = Math.floor(Math.random() * 99999)
+	let rn = getNewRng(randomStartSeed)
 	let rndStart = {
-		x: Math.floor(Math.random() * 10000),
-		y: Math.floor(Math.random() * 10000)
+		x: Math.floor(rn() * 10000),
+		y: Math.floor(rn() * 10000)
 	}
 	console.log("Home Planet: x: " + rndStart.x + ", y:" + rndStart.y)
 	while (
@@ -49,25 +110,25 @@ function getNewPlayer() {
 		!getGalaxyOpts(rndStart.x, rndStart.y).planets.length
 	) {
 		rndStart = {
-			x: Math.floor(Math.random() * 10000),
-			y: Math.floor(Math.random() * 10000)
+			x: Math.floor(rn() * 10000),
+			y: Math.floor(rn() * 10000)
 		}
 		console.log("Home Planet: x: " + rndStart.x + ", y:" + rndStart.y)
 	}
-	screenPos = getGalaxyOpts(rndStart.x, rndStart.y).planets[0].pos // { x: rndStart.x * quadrantSize, y: rndStart.y * quadrantSize } // getGalaxyOpts(rndStart.x, rndStart.y).planets[0].pos
-	planetLock = getGalaxyOpts(rndStart.x, rndStart.y).planets[0]
-	homePlanet = getGalaxyOpts(rndStart.x, rndStart.y).planets[0]
-	// player.x = screenPos.x + 25
-	// player.y = screenPos.y + 25
+	screenPos = getPlanetPos(
+		getGalaxyOpts(rndStart.x, rndStart.y).planets[0],
+		time
+	)
+
 	player = {
 		seed: randomStartSeed,
-		race: getRaceName(getNewRng(randomStartSeed)),
+		race: getRaceName(rn),
 		boostLeft: false,
 		boostRight: false,
 		x: screenPos.x + 25,
 		y: screenPos.y + 25,
 		level: 5,
-		rot: -Math.PI * 0.5,
+		rot: -PIH,
 		planet: null,
 		thrust: {
 			x: 0,
@@ -82,12 +143,12 @@ function getNewPlayer() {
 		speed: 0.003,
 		turnSpeed: 0.05,
 		turnStability: 0.95,
-		fireRate: 60,
+		fireRate: 1, // 60,
 		dmg: 1,
 		shotCd: 0,
 		shotLife: 20 / 0.01,
-		shotSpeed: 0.01,
-		shotDis: 20,
+		shotSpeed: 0.1, //0.01,
+		shotDis: 30,
 
 		shipOpts: getShipOpts(randomStartSeed, 5 / 500)
 	}
@@ -119,13 +180,10 @@ export class Enemy {
 		this.y = pos.y
 		this.mot = { x: 0, y: 0 }
 		this.rotAcc = 0
-		this.rot = Math.random() * Math.PI * 2
-
-		//bullet
+		this.rot = Math.random() * PI2
 	}
 	shoot() {
-		this.mot.x -= Math.cos(this.rot) * 0.05
-		this.mot.y -= Math.sin(this.rot) * 0.05
+		posPlusAng(this.mot, -this.rot, 0.05)
 		createBullets(
 			this.seed,
 			this.shipOpts.weapons,
@@ -139,15 +197,12 @@ export class Enemy {
 	}
 	update() {
 		let disToPlayer = distPoints(this, player)
+
 		if (this.shotCd > 0) {
 			this.shotCd -= 1 * (this.shipOpts.weapons.isDead ? 0.5 : 1)
 		}
 		if (disToPlayer < this.enemyDistance) {
 			if (disToPlayer < this.shotDis) {
-				// if (
-				// 	compareAngles(this.rot + Math.PI, anglePoints(player, this)) <
-				// 	this.turnSpeed * 10
-				// ) {
 				if (!this.shipOpts.weapons.isDead && this.shotCd <= 0) {
 					this.shoot()
 					this.shotCd = this.fireRate
@@ -156,9 +211,6 @@ export class Enemy {
 			}
 			this.aim = player
 			this.moveTo(player)
-
-			//isInShotDis ?
-			//fly to & attack player
 		} else {
 			if (
 				this.aim == player &&
@@ -170,7 +222,6 @@ export class Enemy {
 			) {
 				this.aim = null
 			}
-			//fly around
 			if (!this.aim || distPoints(this.aim, this) < 5) {
 				this.aim = this.findRandomAim()
 			}
@@ -179,10 +230,8 @@ export class Enemy {
 			}
 			this.moveTo(this.aim)
 		}
-		this.mot.x *= 0.99
-		this.mot.y *= 0.99
-		this.x += this.mot.x
-		this.y += this.mot.y
+		posMult(this.mot, 0.99)
+		posPlusPos(this, this.mot)
 
 		checkCollisions(this, false)
 
@@ -195,13 +244,8 @@ export class Enemy {
 		components.forEach(component => {
 			if (component.hp <= 0 && !component.isDead) {
 				component.isDead = true
-				addBrokenComponent(
-					this.x,
-					this.y,
-					this.size,
-					this.rot + Math.PI * 0.5,
-					component
-				)
+
+				addBrokenComponent(this, component)
 			}
 		})
 
@@ -218,48 +262,57 @@ export class Enemy {
 				],
 				time
 			)
-			pos.x += Math.random() * 40
-			pos.y += Math.random() * 40
+			posPlusAng(pos, rndBtwn(0, PI2), rndBtwn(0, 40))
 			return pos
 		}
-		return {
-			x:
-				this.galaxy.middle.x +
-				(Math.random() - Math.random()) * this.galaxy.size,
-			y:
-				this.galaxy.middle.y +
-				(Math.random() - Math.random()) * this.galaxy.size
-		}
+		return pos(
+			this.galaxy.pos.x + rndBtwn(-1, 1) * this.galaxy.size,
+			this.galaxy.pos.y + rndBtwn(-1, 1) * this.galaxy.size
+		)
 	}
 	render() {
-		renderAShip(this, this.boost, this.boostLeft, this.boostRight, true)
 		let onsc = getOnScreenPos(this.x, this.y)
 		if (distPoints(mousePos, onsc) < zoom * this.size * 10) {
-			c.fillStyle = "green"
-			c.textBaseline = "top"
-			let comps = {
-				Hull: "hull",
-				Weapons: "weapons",
-				Wings: "wings",
-				Thrust: "thrust"
+			if (hoveredEnemy == null) {
+				hoveredEnemy = this
+				c.fillStyle = "green"
+				c.strokeStyle = "rgba(200,50,50,0.5)"
+				c.textBaseline = "top"
+				setFont(c, 14)
+
+				let size = this.size * zoom * 6
+				let x = onsc.x - 60
+				let y = onsc.y - 40 - size
+				c.fillText(this.race + " Ship", x, y - 20)
+				setFont(c, 14)
+				Object.entries(components).forEach((entry, i) => {
+					let yy = y + 13 * i
+					c.fillText(entry[1].name, x, yy)
+					c.fillRect(
+						onsc.x,
+						yy,
+						(60 * this.shipOpts[entry[0]].hp) / this.shipOpts[entry[0]].maxHp,
+						5
+					)
+				})
+				c.fillStyle = "rgba(200,50,50,0.3)"
+				c.strokeRect(onsc.x - size / 2, onsc.y - size / 2, size, size)
 			}
-			c.font = "14px Gill Sans MT"
-			c.fillText(this.race + " Ship", onsc.x - 60, onsc.y - 110)
-			c.font = "12px Gill Sans MT"
-			Object.entries(comps).forEach((entry, i) => {
-				c.fillText(entry[0], onsc.x - 60, onsc.y - 90 + 13 * i)
-				c.fillRect(
-					onsc.x,
-					onsc.y - 90 + 13 * i,
-					(60 * this.shipOpts[entry[1]].hp) / this.shipOpts[entry[1]].maxHp,
-					5
-				)
-			})
+		}
+		if (!isPosOnScreen(onsc, zoom)) {
+			let x = getInRange(onsc.x, 0, w)
+			let y = getInRange(onsc.y, 0, h)
+			c.strokeStyle = "rgba(200,50,50,0.7)"
+			c.lineWidth = 2
 			c.beginPath()
-			c.arc(onsc.x, onsc.y, this.size * zoom * 10, 0, 8)
+			drawEvenTriangle(c, x, y, 15, angle(onsc.x, onsc.y, x, y))
 			c.closePath()
 			c.stroke()
+		} else {
+			renderAShip(this, this.boost, this.boostLeft, this.boostRight, true)
 		}
+
+		//DELETE
 		if (debug) {
 			c.strokeStyle = "rgba(255,255,255,0.5)"
 			let ons = getOnScreenPos(this.x, this.y)
@@ -275,35 +328,31 @@ export class Enemy {
 			c.stroke()
 
 			if (this.aim) {
-				c.strokeStyle = "white"
-				c.beginPath()
-				c.moveTo(ons.x, ons.y)
-				c.lineTo(
-					getOnScreenPos(this.aim.x, this.aim.y).x,
-					getOnScreenPos(this.aim.x, this.aim.y).y
-				)
-				c.closePath()
-				c.stroke()
-				c.fillRect(getOnScreenPos(this.aim).x, getOnScreenPos(this.aim).y, 5, 5)
+				let onsAim = getOnScreenPos(this.aim.x, this.aim.y)
+				line(c, ons, onsAim, "white")
+				line(c, ons, _posPlusAng(ons, this.rot, 10), "white")
+
+				c.fillRect(onsAim.x, onsAim.y, 5, 5)
 			}
 		}
+		//DELETE
 	}
 	moveTo(pos) {
-		// let x = pos.x - this.x
-		// let y = pos.y - this.y
-		// let lngth = Math.sqrt(x * x + y * y)
-		// this.mot.x = (0.5 * x) / lngth
-		// this.mot.y = (0.5 * y) / lngth
-
-		let rotation =
-			-this.turnSpeed *
-			0.05 *
-			turnTowards(anglePoints(pos, this), this.rot + Math.PI, this.turnSpeed)
-		rotation > 0 ? (this.boostLeft = true) : (this.boostLeft = false)
-		rotation < 0 ? (this.boostRight = true) : (this.boostRight = false)
-		if (rotation == 0) {
+		let ang = anglePoints(pos, this)
+		if (compareAngles(ang, this.rot) < this.turnSpeed * 2) {
+			this.rot = ang
+		} else {
+			let rotation =
+				-this.turnSpeed *
+				0.05 *
+				turnTowards(ang, this.rot + Math.PI, this.turnSpeed)
+			rotation > 0
+				? (this.boostLeft = true)
+				: rotation < 0
+				? (this.boostRight = true)
+				: null
+			this.rotAcc += rotation * (this.shipOpts.wings.isDead ? 0.1 : 1)
 		}
-		this.rotAcc += rotation * (this.shipOpts.wings.isDead ? 0.1 : 1)
 		this.rot += this.rotAcc
 
 		this.rotAcc *= 0.9 + (this.shipOpts.wings.isDead ? 0.09 : 0)
@@ -311,12 +360,11 @@ export class Enemy {
 		let dis = distPoints(this, pos)
 
 		let speed =
-			(Math.log(dis) / Math.log(this.shotDis)) *
+			0.25 *
+			Math.min(1, dis / this.enemyDistance) *
 			this.speed *
 			(this.shipOpts.thrust.isDead ? 0.1 : 1)
-		let acc = speed
-		this.mot.x += acc * Math.cos(this.rot)
-		this.mot.y += acc * Math.sin(this.rot)
+		posPlusAng(this.mot, this.rot, speed)
 
 		this.boost = true
 	}
@@ -326,41 +374,20 @@ function killall() {
 		Object.values(enemy.shipOpts).forEach(comp => (comp.hp = 0))
 	)
 }
-const ZOOM_MAX = 6000
-const ZOOM_MIN = 0.01
-var zoomHandleGrabbed = false
+
 window.onload = () => {
 	cnv = document.getElementById("c")
-	cnv.style.margin = 0
-	document.body.margin = 0
-	cnv.width = w
-	cnv.height = h
+	cnv2 = document.getElementById("b")
+	cnvH = document.getElementById("h")
 	c = cnv.getContext("2d")
-
-	let cnvh = document.getElementById("h")
-	cnvh.style.margin = 0
-	cnvh.width = w
-	cnvh.height = h
-	ch = cnvh.getContext("2d")
-
-	renderBg()
+	ch = cnvH.getContext("2d")
 
 	let resizeTimer = null
 	window.addEventListener("resize", () => {
 		clearTimeout(resizeTimer)
-		resizeTimer = window.setTimeout(() => {
-			w = window.innerWidth
-			h = window.innerHeight
-			cnv.width = w
-			cnv.height = h
-			cnv2.width = w
-			cnv2.height = h
-			cnvh.width = w
-			cnvh.height = h
-			renderBg()
-		})
+		resizeTimer = window.setTimeout(resize)
 	})
-	// window.addEventListener("resize", () => {})
+	resize()
 
 	window.addEventListener("keydown", ev => {
 		keysdown[ev.key] = true
@@ -371,24 +398,14 @@ window.onload = () => {
 	window.addEventListener("keyup", ev => {
 		keysdown[ev.key] = false
 	})
-	// let mouseDown = false
 	window.addEventListener("mousedown", ev => {
 		mouseDown = true
 		mousePos = { x: ev.clientX, y: ev.clientY }
-
+		if (hoveredEnemy) {
+			enemyLock = hoveredEnemy
+		}
 		if (hoveredGalaxy && debug) {
-			// let galAngle = anglePoints(hoveredGalaxy.middle, player)
-			// let dis = distPoints(hoveredGalaxy.middle, player)
-			// player.x -= Math.cos(galAngle) * (dis - hoveredGalaxy.size)
-			// player.y -= Math.sin(galAngle) * (dis - hoveredGalaxy.size)
 			if (hoveredPlanet) {
-				// console.log("planet")
-				// zoomAim = {
-				// 	x: getPlanetPos(hoveredPlanet).x,
-				// 	y: getPlanetPos(hoveredPlanet).y,
-				// 	zoom: (hoveredPlanet.rad * 3) / Math.min(w, h)
-				// }
-				planetLock = hoveredPlanet
 				let planetPos = getPlanetPos(hoveredPlanet, time)
 				let galAngle = anglePoints(planetPos, player)
 				let dis = distPoints(planetPos, player)
@@ -398,13 +415,8 @@ window.onload = () => {
 				zoom < 0.5 &&
 				!posEquals(hoveredGalaxy, getShipQuadrant(player))
 			) {
-				// zoomAim = {
-				// 	x: hoveredGalaxy.middle.x,
-				// 	y: hoveredGalaxy.middle.y,
-				// 	zoom: Math.min(w, h) / (hoveredGalaxy.size * zoom * 1.1)
-				// }
-				let galAngle = anglePoints(hoveredGalaxy.middle, player)
-				let dis = distPoints(hoveredGalaxy.middle, player)
+				let galAngle = anglePoints(hoveredGalaxy.pos, player)
+				let dis = distPoints(hoveredGalaxy.pos, player)
 				player.x -= Math.cos(galAngle) * (dis - hoveredGalaxy.size)
 				player.y -= Math.sin(galAngle) * (dis - hoveredGalaxy.size)
 			}
@@ -421,34 +433,22 @@ window.onload = () => {
 	let setZoomHandleFromZoom = () => {
 		zoomHandle.style.top =
 			zoomBar.clientHeight -
-			Math.min(
-				zoomBar.clientHeight,
-				Math.max(
-					0,
-					(zoom / (Math.log(ZOOM_MAX) - Math.log(ZOOM_MIN))) *
-						zoomBar.clientHeight
-				)
+			getInRange(
+				(zoom / (Math.log10(ZOOM_MAX) - Math.log10(ZOOM_MIN))) *
+					zoomBar.clientHeight,
+				0,
+				zoomBar.clientHeight
 			) +
 			"px"
 	}
-	let setZoomFromZoomHandle = y => {}
 	setZoomHandleFromZoom()
-	// zoomHandle.style.top =
-	// 	Math.min(
-	// 		zoomBar.clientHeight,
-	// 		Math.max(
-	// 			0,
-	// 			(zoom / (Math.log(ZOOM_MAX) - Math.log(ZOOM_MIN))) *
-	// 				zoomBar.clientHeight
-	// 		)
-	// 	) + "px"
 
 	zoomHandle.addEventListener("mousedown", ev => {
 		ev.preventDefault()
 		zoomHandleGrabbed = ev.clientY - zoomHandle.getBoundingClientRect().top
 	})
-	zoomBar.addEventListener("mousedown", ev => {
-		zoomHandleGrabbed = 0
+
+	let getZoomFromEv = ev => {
 		let rect = zoomBar.getBoundingClientRect()
 		let relY = Math.max(
 			0.1,
@@ -456,41 +456,27 @@ window.onload = () => {
 		)
 		zoomHandle.style.top =
 			Math.min(zoomBar.clientHeight, Math.max(0, relY)) + "px"
-
-		zoom = Math.max(
+		return getInRange(
+			(Math.max(0.1, zoomBar.clientHeight - relY) / zoomBar.clientHeight) *
+				(Math.log10(ZOOM_MAX) - Math.log10(ZOOM_MIN)),
 			ZOOM_MIN,
-			Math.min(
-				ZOOM_MAX,
-				(Math.max(0.1, zoomBar.clientHeight - relY) / zoomBar.clientHeight) *
-					(Math.log(ZOOM_MAX) - Math.log(ZOOM_MIN))
-			)
+			ZOOM_MAX
 		)
+	}
+	zoomBar.addEventListener("mousedown", ev => {
+		zoomHandleGrabbed = 0
+
+		zoom = getZoomFromEv(ev)
+
 		zoomHandleGrabbed = true
 	})
 
 	window.addEventListener("mousemove", ev => {
 		if (zoomHandleGrabbed) {
-			let rect = zoomBar.getBoundingClientRect()
-			let relY = Math.max(
-				0.1,
-				Math.min(zoomBar.clientHeight, ev.clientY - rect.top)
-			)
-			zoomHandle.style.top =
-				Math.min(zoomBar.clientHeight, Math.max(0, relY)) + "px"
-
-			zoom = Math.max(
-				ZOOM_MIN,
-				Math.min(
-					ZOOM_MAX,
-					(Math.max(0.1, zoomBar.clientHeight - relY) / zoomBar.clientHeight) *
-						(Math.log(ZOOM_MAX) - Math.log(ZOOM_MIN))
-				)
-			)
+			zoom = getZoomFromEv(ev)
 		}
 
 		if (mouseDown) {
-			zoomAim = null
-			if (planetLock) planetLock = null
 			screenPos.x += (mousePos.x - ev.clientX) / zoom
 			screenPos.y += (mousePos.y - ev.clientY) / zoom
 		}
@@ -504,6 +490,7 @@ window.onload = () => {
 			return
 		}
 		delay = true
+		enemyLock = null
 
 		//Because Firefox does not set .wheelDelta
 		let wheelDelta = event.wheelDelta ? event.wheelDelta : -1 * event.deltaY
@@ -512,7 +499,7 @@ window.onload = () => {
 			((wheelDelta + 1) / (Math.abs(wheelDelta) + 1)) *
 			Math.min(Math.abs(wheelDelta))
 
-		var wheel = (evDel / Math.abs(evDel)) * 1
+		var wheel = evDel / Math.abs(evDel)
 
 		zoom = Math.min(
 			ZOOM_MAX,
@@ -520,32 +507,110 @@ window.onload = () => {
 		)
 
 		delay = false
-		console.log(zoom)
 
 		setZoomHandleFromZoom()
 	})
+
+	initParticles()
 
 	startScreen()
 	update()
 }
 
-function renderBg() {
-	cnv2 = document.getElementById("b")
-	cnv2.style.margin = 0
-	document.body.margin = 0
+function initParticles() {
+	trailSmoke = new Particles(
+		() => {
+			c.fillStyle = "rgba(255,255,255,0.3)"
+		},
+		el => {
+			el[1] -= ((Math.cos(el[3]) / 50) * (60 - el[4])) / 60
+			el[2] -= ((Math.sin(el[3]) / 50) * (60 - el[4])) / 60
+			el[4] *= 0.999
+			let onsc = getOnScreenPos(el[1], el[2])
+			let siz = ((0.3 * el[4]) / 75) * (0.2 + 0.8 * Math.random()) * zoom
+
+			c.beginPath()
+
+			let z = Math.min(30, zoom)
+			for (let i = 0; i < Math.random() * 5; i++) {
+				let x = onsc.x + rndBtwn(-siz, siz)
+				let y = onsc.y + rndBtwn(-siz, siz)
+				c.moveTo(x, y) // 0, 8)
+				c.arc(x, y, siz, 0, PI2) // 0, 8)
+			}
+
+			c.fill()
+			c.closePath()
+		},
+		() => {},
+		250
+	)
+
+	bulletHits = new Particles(
+		() => {},
+		el => {
+			let disAng = disAngOrigin(el[1], el[2])
+			let x = Math.cos(disAng.ang + PIH + el[3].rot) * disAng.dis
+			let y = Math.sin(disAng.ang + PIH + el[3].rot) * disAng.dis
+			hitExplosion(
+				c,
+				getOnScreenPos(el[3].x + x, el[3].y + y),
+				0.02 * Math.min(15, zoom)
+			)
+		},
+		() => {},
+		250
+	)
+	bulletSmokes = new Particles(
+		() => {},
+		el => {
+			c.fillStyle = rgb(el[3], Math.random())
+
+			let onsc = getOnScreenPos(el[1], el[2])
+			let siz = el[0] / 10
+			c.fillRect(
+				onsc.x - (siz / 2) * zoom,
+				onsc.y - (siz / 2) * zoom,
+				siz * zoom,
+				siz * zoom
+			)
+		},
+		() => {},
+		250
+	)
+
+	brokenComponents = new Particles(
+		() => {},
+		el => {
+			translateToAndDraw(c, el[1], el[2], () => {
+				scaleRotate(c, zoom * el[3], el[4])
+			})
+
+			c.fill(el[7].path)
+
+			c.restore()
+			el[1] += Math.cos(el[5]) * el[6]
+			el[2] += Math.sin(el[5]) * el[6]
+			el[4] += 0.04
+			el[3] *= 0.99
+		},
+		() => {},
+		250
+	)
+}
+
+function resize() {
+	w = window.innerWidth
+	h = window.innerHeight
+	cnv.width = w
+	cnv.height = h
 	cnv2.width = w
 	cnv2.height = h
-	let c2 = cnv2.getContext("2d")
-	for (let i = 0; i < 1000; i++) {
-		c2.fillStyle =
-			"rgba(125," +
-			(155 + Math.random() * 100) +
-			"," +
-			(155 + Math.random() * 100) +
-			",0.4)"
-		star(c2, Math.random() * w, Math.random() * h, Math.random() * 2)
-	}
+	cnvH.width = w
+	cnvH.height = h
+	renderBg(w, h)
 }
+
 function getQuadrantsToDraw() {
 	let xStart = Math.floor((screenPos.x - w / 2 / zoom) / quadrantSize)
 	let xEnd = Math.floor((screenPos.x + w / 2 / zoom) / quadrantSize)
@@ -559,9 +624,6 @@ function getQuadrantsToDraw() {
 	}
 }
 
-var lastTime = window.performance.now()
-var timeUntilNextTick = 0
-var tickDur = 16
 function update() {
 	if (!paused) {
 		let newTime = window.performance.now()
@@ -570,8 +632,8 @@ function update() {
 		while (timeUntilNextTick > tickDur) {
 			timeUntilNextTick -= tickDur
 		}
-		tick()
 		time += 1
+		tick()
 		render()
 	}
 	window.requestAnimationFrame(update)
@@ -606,11 +668,11 @@ function tick() {
 		for (let j = pQ.y - 1; j <= pQ.y + 1; j++) {
 			let gOpts = getGalaxyOpts(pQ.x, pQ.y)
 
-			if (gOpts.middle && distPoints(gOpts.middle, player) < quadrantSize)
+			if (gOpts.pos && distPoints(gOpts.pos, player) < quadrantSize)
 				getEnemies(i, j).forEach(enemy => {
 					if (
 						distPoints(enemy, player) < 1000 ||
-						posEquals(getShipQuadrant(enemy), pQ)
+						quadrantEquals(enemy, player)
 					) {
 						activeEnemies.add(enemy)
 					}
@@ -623,7 +685,7 @@ function tick() {
 		if (
 			distPoints(enemy, player) > 1000 &&
 			enemy.aim != player &&
-			!posEquals(getShipQuadrant(enemy), getShipQuadrant(player))
+			!quadrantEquals(enemy, player)
 		) {
 			console.log("Removed active enemy")
 			activeEnemies.delete(enemy)
@@ -650,34 +712,50 @@ function tick() {
 		}
 	})
 }
-function posEquals(p1, p2) {
-	return p1.x == p2.x && p1.y == p2.y
-}
-var conqueredQuadrants = {}
-var drawnQuadrants = []
+
 function render() {
 	c.clearRect(0, 0, w, h)
+
+	if (enemyLock && !enemyLock.isDead) {
+		let enemyOnsc = getOnScreenPos(enemyLock.x, enemyLock.y)
+		let dis = dist(w / 2, h / 2, enemyOnsc.x, enemyOnsc.y)
+		let scrRad = Math.min(w, h - 300) / 2
+		if (dis > scrRad * 1.5) {
+			zoom = Math.min(
+				ZOOM_MAX,
+				Math.max(ZOOM_MIN, Math.max(zoom - 0.02, zoom * 0.99))
+			)
+			console.log(1)
+		} else if (dis < scrRad * 0.5) {
+			console.log(2)
+			zoom = Math.min(
+				ZOOM_MAX,
+				Math.max(ZOOM_MIN, Math.min(zoom + 0.02, zoom * 1.01))
+			)
+		}
+	}
+
 	let quadrants = getQuadrantsToDraw(screenPos)
 	hoveredGalaxy = null
 	hoveredPlanet = null
 
 	screenPos = { x: player.x, y: player.y }
 
-	drawnQuadrants = []
 	for (let i = quadrants.xStart; i <= quadrants.xEnd; i++) {
 		for (let j = quadrants.yStart; j <= quadrants.yEnd; j++) {
 			drawQuadrant(i, j)
-			drawnQuadrants.push([i, j])
 		}
 	}
-	renderBrokenComponents()
+	brokenComponents.render()
+	hoveredEnemy = null
 	activeEnemies.forEach(enemy => enemy.render())
 
-	renderTrailSmoke()
+	trailSmoke.render()
 	drawPlayer()
 
 	drawBullets()
-	renderBulletHits()
+	bulletHits.render()
+	bulletSmokes.render()
 	let pq = getShipQuadrant(player)
 	drawHUD(
 		getGalaxyOpts(pq.x, pq.y),
@@ -708,8 +786,8 @@ function createBullets(
 		let newSpd = dist(0, 0, xSpd, ySpd)
 		addBullet(
 			seed,
-			ship.x + Math.cos(dir + Math.PI * 0.5 + ang) * dis,
-			ship.y + Math.sin(dir + Math.PI * 0.5 + ang) * dis,
+			ship.x + Math.cos(dir + PIH + ang) * dis,
+			ship.y + Math.sin(dir + PIH + ang) * dis,
 			shootDir,
 			newSpd,
 			dmg,
@@ -720,8 +798,8 @@ function createBullets(
 		ang = angle(0, 0, shipSize * -weapOffsetX, shipSize * weaponsOpts.top)
 		addBullet(
 			seed,
-			ship.x + Math.cos(dir + Math.PI * 0.5 + ang) * dis,
-			ship.y + Math.sin(dir + Math.PI * 0.5 + ang) * dis,
+			ship.x + Math.cos(dir + PIH + ang) * dis,
+			ship.y + Math.sin(dir + PIH + ang) * dis,
 			shootDir,
 			newSpd,
 			dmg,
@@ -784,13 +862,8 @@ function drawBullets() {
 	})
 }
 
-var hoveredGalaxy = null
-var hoveredPlanet = null
 function drawQuadrant(x, y) {
 	c.lineWidth = 0.1
-	// c.strokeStyle = "white"
-	// let pos = getOnScreenPos(x * quadrantSize, y * quadrantSize)
-	// c.strokeRect(pos.x, pos.y, quadrantSize * zoom, quadrantSize * zoom)
 
 	if (hasQuadrantGalaxy({ x, y })) {
 		if (isNaN(x)) {
@@ -798,8 +871,8 @@ function drawQuadrant(x, y) {
 		}
 		let opts = getGalaxyOpts(x, y)
 		let rn = getNewRng(opts.seed)
-		let starPos = getOnScreenPos(opts.middle.x, opts.middle.y)
-		let isHovered = distPoints(starPos, mousePos) < opts.size * zoom
+		let pos = getOnScreenPos(opts.pos.x, opts.pos.y)
+		let isHovered = distPoints(pos, mousePos) < opts.size * zoom
 		isHovered ? (hoveredGalaxy = opts) : null
 		if (zoom < 0.5) {
 			let mx = screenPos.x + (mousePos.x - w / 2) / zoom
@@ -810,28 +883,28 @@ function drawQuadrant(x, y) {
 				c.fillStyle = "green"
 				c.lineWidth = 0.5
 				let tx = opts.name
-				c.font = "16px Arial black"
+				setFont(c, 16)
 				let wd = c.measureText(tx).width
 
 				c.beginPath()
-				// c.arc(starPos.x, starPos.y, opts.size * zoom + 20, 0, 8)
+				// c.arc(pos.x, pos.y, opts.size * zoom + 20, 0, 8)
 				c.rect(
-					starPos.x - opts.size * zoom,
-					starPos.y - opts.size * zoom,
+					pos.x - opts.size * zoom,
+					pos.y - opts.size * zoom,
 					opts.size * zoom * 2,
 					opts.size * zoom * 2
 				)
 				// c.rect(
-				// 	starPos.x - 25 - wd - opts.size * zoom - 20,
-				// 	starPos.y - 10,
+				// 	pos.x - 25 - wd - opts.size * zoom - 20,
+				// 	pos.y - 10,
 				// 	wd + 10,
 				// 	20
 				// )
-				c.moveTo(starPos.x - 15 - opts.size * zoom - 20, starPos.y)
-				c.lineTo(starPos.x - opts.size * zoom, starPos.y)
+				c.moveTo(pos.x - 15 - opts.size * zoom - 20, pos.y)
+				c.lineTo(pos.x - opts.size * zoom, pos.y)
 				c.closePath()
 				c.stroke()
-				c.fillText(tx, starPos.x - 40 - wd - opts.size * zoom, starPos.y + 6)
+				c.fillText(tx, pos.x - 40 - wd - opts.size * zoom, pos.y + 6)
 			}
 		}
 
@@ -839,13 +912,13 @@ function drawQuadrant(x, y) {
 
 		let rad = opts.starRad * zoom
 		c.fillStyle = opts.col(zoom, 1)
-		let starX = starPos.x
-		let starY = starPos.y
+		let starX = pos.x
+		let starY = pos.y
 		c.beginPath()
 		if (getPlayerSpeed() > 250000) {
 			let rem = Math.max(0, 299792 - getPlayerSpeed()) / 50000
-			starX = w / 2 - rem * (w / 4) * Math.cos(Math.abs(starPos.x))
-			starY = h / 2 - rem * (h / 4) * Math.cos(Math.abs(starPos.y))
+			starX = w / 2 - rem * (w / 4) * Math.cos(Math.abs(pos.x))
+			starY = h / 2 - rem * (h / 4) * Math.cos(Math.abs(pos.y))
 
 			let c2 = cnv2.getContext("2d")
 			c2.fillStyle =
@@ -879,9 +952,9 @@ function drawQuadrant(x, y) {
 				starY,
 				rad * (0.8 + 0.4 * rn() * Math.abs(((rn() * i * 0.01) % 1) - 0.5)),
 				rad * (0.8 + 0.4 * rn() * Math.abs(((rn() * i * 0.01 + 0.5) % 2) - 1)),
-				rn() * Math.PI * 2 + Math.abs(((rn() * i * 0.01 + 0.5) % 2) - 1),
+				rn() * PI2 + Math.abs(((rn() * i * 0.01 + 0.5) % 2) - 1),
 				0,
-				Math.PI * 2,
+				PI2,
 				0
 			)
 			c.fill()
@@ -890,6 +963,10 @@ function drawQuadrant(x, y) {
 
 		drawPlanets(opts)
 	}
+}
+
+function quadrantEquals(ship1, ship2) {
+	return posEquals(getShipQuadrant(ship1), getShipQuadrant(ship2))
 }
 function getShipQuadrant(ship) {
 	return {
@@ -901,78 +978,21 @@ function getShipQuadrant(ship) {
 function drawPlanets(opts) {
 	c.strokeStyle = "white"
 	c.lineWidth = 0.1
+
 	opts.planets
 		.filter(planet => planet.rad * zoom > 1)
 		.forEach(planet => {
+			c.strokeStyle = "white"
+			c.beginPath()
+			let onsc = getOnScreenPos(opts.pos.x, opts.pos.y)
+			c.arc(onsc.x, onsc.y, planet.dist * zoom, 0, PI2)
+			c.closePath()
+			c.stroke()
 			drawPlanet(planet, opts)
 			c.closePath()
-
-			// 		c.strokeStyle = "green"
-			// 		c.lineWidth = 2
-			// 		c.beginPath()
-			// 		c.arc( onScreenPos.x, onScreenPos.y, planet.rad * zoom + 5, 0, 8 )
-			// 		c.stroke()
-			// 		c.closePath()
-			// }
 		})
 }
-function hitExplosion(pos, rad) {
-	for (let i = 0; i < 1; i++) {
-		c.fillStyle =
-			"rgba(" +
-			255 +
-			"," +
-			Math.floor((Math.abs((time % 14) - 7) / 7) * 255) +
-			"," +
-			Math.floor((Math.abs((time % 34) - 17) / 17) * 255) +
-			"," +
-			(0.3 + 0.5 * Math.random()) +
-			")"
-		c.beginPath()
-		c.ellipse(
-			pos.x,
-			pos.y,
-			0.3 + rad * 1.2 * zoom * Math.random(),
-			0.3 + rad * 0.9 * zoom * Math.random(),
-			((time * 0.01) % 1.248) * Math.PI * 2,
-			0,
-			Math.PI * 2,
-			0
-		)
-		c.fill()
-		c.closePath()
-	}
-}
-function drawExplosion(rn, starPos, rad) {
-	for (let i = 0; i < 20 * zoom; i++) {
-		c.fillStyle =
-			"rgba(" +
-			255 +
-			"," +
-			Math.floor(time * rn() * 255) +
-			"," +
-			Math.floor(time * rn() * 155) +
-			"," +
-			0.5 / i +
-			")"
-		c.beginPath()
-		c.ellipse(
-			starPos.x,
-			starPos.y,
-			rad * 1.5 * zoom * rn(),
-			rad * 1.2 * zoom * rn(),
-			((time * 0.01) % 1.248) * Math.PI * 2,
-			0,
-			Math.PI * 2,
-			0
-		)
-		c.fill()
-		c.closePath()
-	}
-}
-var player = {}
 
-var playerPathCounter = 0
 function drawPlayer() {
 	let x = player.x
 	let y = player.y
@@ -1017,87 +1037,42 @@ function drawPlayer() {
 	let arrowUp =
 		keysdown["ArrowUp"] || keysdown[" "] || keysdown["w"] || keysdown["W"]
 	if (arrowUp) {
-		player.shipOpts.thrust.points.forEach(p => {
-			let offset = p[0] + player.shipOpts.thrust.tw * 0.5 //Math.random()
-			addTrailSmoke(
-				player.x -
-					Math.cos(player.rot - Math.PI * 0.5) * offset -
-					Math.cos(player.rot) * (p[1] + player.shipOpts.thrust.h2),
-				player.y -
-					Math.sin(player.rot - Math.PI * 0.5) * offset -
-					Math.sin(player.rot) * (p[1] + player.shipOpts.thrust.h2),
-				player.rot
-			)
-		})
+		player.shipOpts.thrust.points
+			.filter(el => Math.random() < 0.6)
+			.forEach(p => {
+				let offset = p[0] + player.shipOpts.thrust.tw * Math.random()
+				addTrailSmoke(
+					player.x -
+						Math.cos(player.rot - PIH) * offset -
+						Math.cos(player.rot) * (p[1] + player.shipOpts.thrust.h2),
+					player.y -
+						Math.sin(player.rot - PIH) * offset -
+						Math.sin(player.rot) * (p[1] + player.shipOpts.thrust.h2),
+					player.rot
+				)
+			})
 	}
 	renderAShip(player, arrowUp, player.boostLeft, player.boostRight, false)
 
 	if (zoom > 5000) {
-		c.font = (((h / 2) * zoom) / 5000) * player.size + "px Arial"
-		let wd = c.measureText("👨‍🚀").width / 2
-		c.textBaseline = "middle"
+		setFont(c, (((h / 2) * zoom) / 5000) * player.size)
+		c.textBaseline = "top"
 		c.fillStyle = "black"
-		c.fillText("👨‍🚀", w / 2 - wd, h / 2)
+		c.fillText("👨‍🚀", w / 2 - c.measureText("👨‍🚀").width / 2, h / 2)
 		c.font = "12px Arial"
 	}
-
-	// if (player.planet) {
-	// c.save()
-	// // c.translate(onsc.x, onsc.y)
-	// // c.rotate(player.rot)
-	// c.fillStyle = "white"
-	// c.beginPath()
-	// // c.arc(0, 0, zoom * 0.03, 0, 8)
-	// drawEvenTriangle(c, onsc.x, onsc.y, 0.01 * zoom, player.rot - 0.75 * Math.PI)
-	// // c.arc(0, 0, 20, 0, 8)
-	// c.fill()
-	// c.closePath()
-
-	// c.fillStyle = "rgba(255,0,0,1)"
-	// c.rotate(-player.rot)
-	// c.rotate(time * player.planet.spd)
-	// c.beginPath()
-	// c.rect(-0.005 * zoom, -0.03 * zoom, 0.01 * zoom, 0.03 * zoom)
-	// c.arc(0, -0.03 * zoom, 0.008 * zoom, 0, 8)
-	// c.fill()
-	// c.closePath()
-	// } else {
-	// 	c.save()
-	// 	c.translate(onsc.x, onsc.y)
-	// 	c.rotate(player.rot)
-	// 	c.font = 0.04 * zoom + "px serif"
-	// 	c.fillText("🚀", 0, 0)
-	// 	c.restore()
-	// }
-
-	// c.restore()
 }
 function renderAShip(ship, boost, boostLeft, boostRight, showDmg) {
 	let quadrantX = Math.floor(ship.x / quadrantSize)
 	let quadrantY = Math.floor(ship.y / quadrantSize)
 	let shipSystem = getGalaxyOpts(quadrantX, quadrantY)
 	let hasGalaxy = hasQuadrantGalaxy({ x: quadrantX, y: quadrantY })
-	let sunAng = hasGalaxy ? anglePoints(shipSystem.middle, ship) : -1
+	let sunAng = hasGalaxy ? anglePoints(shipSystem.pos, ship) : -1
 	let sunDis = hasGalaxy
-		? shipSystem.size - distPoints(ship, shipSystem.middle)
+		? shipSystem.size - distPoints(ship, shipSystem.pos)
 		: 0
 	let size = 1
-	// if (shipSystem) {
-	// 	shipSystem.planets.forEach(planet => {
-	// 		let pos = getPlanetPos(planet, time)
-	// 		if (distPoints(pos, ship) < planet.rad * 1.5) {
-	// 			size = 1 + 1 * Math.sqrt(planet.rad * 1.5 - distPoints(pos, ship))
-	// 		}
-	// 	})
-	// 	if (distPoints(shipSystem.middle, ship) < shipSystem.starRad * 1.5) {
-	// 		size =
-	// 			1 +
-	// 			1 *
-	// 				Math.sqrt(
-	// 					shipSystem.starRad * 1.5 - distPoints(shipSystem.middle, ship)
-	// 				)
-	// 	}
-	// }
+
 	ship.size = size
 	let shadeOffset = hasGalaxy ? (sunDis / shipSystem.size) * 0.25 : 0
 	let onsc = getOnScreenPos(ship.x, ship.y)
@@ -1109,7 +1084,7 @@ function renderAShip(ship, boost, boostLeft, boostRight, showDmg) {
 		ship.shipOpts,
 		zoom,
 		ship.rot,
-		sunAng - ship.rot - Math.PI * 0.5,
+		sunAng - ship.rot - PIH,
 		shadeOffset,
 		showDmg,
 		boost,
@@ -1118,95 +1093,132 @@ function renderAShip(ship, boost, boostLeft, boostRight, showDmg) {
 	)
 }
 function gameOver() {
-	let createDiv = className => {
-		let d = document.createElement("div")
-		d.className = className
-		return d
-	}
+	let dialog = createDialog()
 
-	let dialog = createDiv("dialog")
-	document.body.appendChild(dialog)
+	let continueBut = getButton("Continue anyway", () => {
+		reset()
 
-	let msg = createDiv("title")
-	msg.innerHTML = "Oh no. You died."
-	dialog.appendChild(msg)
-
-	let continueBut = document.createElement("button")
-	continueBut.innerHTML = "Continue anyway"
-	continueBut.onclick = () => {
-		Object.values(player.shipOpts).forEach(comp => {
-			comp.hp = comp.maxHp
-			comp.isDead = false
-		})
-		player.isDead = false
-		let playerGal = getShipQuadrant(player)
-		if (hasQuadrantGalaxy(playerGal)) {
-			let gal = getGalaxyOpts(playerGal.x, playerGal.y)
-			player.x = gal.middle.x - gal.size
-			player.y = gal.middle.y - gal.size
-		} else {
-			player.x = playerGal.x * quadrantSize
-			player.y = playerGal.y * quadrantSize
-		}
-		player.mot.x = 0
-		player.mot.y = 0
 		document.body.removeChild(dialog)
-		paused = false
-	}
-	let newGameBut = document.createElement("button")
-	newGameBut.innerHTML = "Start another game"
+	})
 
-	dialog.appendChild(continueBut)
-	dialog.appendChild(newGameBut)
+	let newGameBut = getButton("Start another game", () => {
+		//TODO
+	})
+	appendChildren(dialog, [
+		titleDiv("Oh no. You died."),
+		continueBut,
+		newGameBut
+	])
 	window.setTimeout(() => (dialog.style.height = "100%"), 50)
 }
 
+function reset() {
+	Object.values(player.shipOpts).forEach(comp => {
+		comp.hp = comp.maxHp
+		comp.isDead = false
+	})
+	player.isDead = false
+	let playerGal = getShipQuadrant(player)
+	if (hasQuadrantGalaxy(playerGal)) {
+		let gal = getGalaxyOpts(playerGal.x, playerGal.y)
+		setPos(player, gal.pos.x - gal.size, gal.pos.y - gal.size)
+	} else {
+		setPos(player, playerGal.x * quadrantSize, playerGal.y * quadrantSize)
+	}
+	posMult(player.mot, 0)
+	paused = false
+}
+
+function chooseRace() {
+	getNewPlayer()
+
+	let dialog = createDialog()
+
+	let shipCnv = createCnv(300, 300)
+
+	let isClosed = false
+	let ct = shipCnv.getContext("2d")
+	let tk = () => {
+		ct.save()
+		ct.clearRect(0, 0, 300, 300)
+		ct.translate(150, 150)
+		ct.scale(40, 40)
+		renderShip(
+			ct,
+			0,
+			0,
+			1,
+			player.shipOpts,
+			1,
+			-PIH,
+			angle(
+				mousePos.x,
+				mousePos.y,
+				w / 2,
+				shipCnv.getBoundingClientRect().top + 150
+			),
+			0.2,
+			false,
+			true,
+			true,
+			true
+		)
+		ct.restore()
+		if (!isClosed) {
+			window.requestAnimationFrame(tk)
+		}
+	}
+	tk()
+
+	let raceName = subTitleDiv(player.race)
+	appendChildren(dialog, [
+		createDiv(""),
+		titleDiv("Choose a race"),
+		shipCnv,
+		raceName,
+		createDiv(""),
+		getButton("New Race", () => {
+			getNewPlayer()
+			raceName.innerHTML = player.race
+		}),
+		getButton("Confirm", () => {
+			isClosed = true
+			document.body.removeChild(dialog)
+			paused = false
+		}),
+		createDiv(""),
+		createDiv("")
+	])
+
+	dialog.style.height = "100%"
+}
 function startScreen() {
-	let createDiv = className => {
-		let d = document.createElement("div")
-		d.className = className
-		return d
-	}
+	let dialog = createDialog()
 
-	let dialog = createDiv("dialog")
-	document.body.appendChild(dialog)
+	appendChildren(dialog, [
+		createDiv(""),
+		titleDiv("Space"),
+		getButton("Start game", () => {
+			getNewPlayer()
+			document.body.removeChild(dialog)
 
-	let msg = createDiv("title")
-	msg.innerHTML = "Space."
-	dialog.appendChild(createDiv(""))
-	dialog.appendChild(msg)
+			chooseRace()
+		}),
+		subTitleDiv(
+			"Mouse to aim. </br> W/S Up-/Down-Arrow to thrust. </br> Click to shoot. "
+		),
+		createDiv("")
+	])
 
-	let msg2 = createDiv("subTitle")
-	msg2.innerHTML =
-		"Mouse to aim. </br> W/S Up-/Down-Arrow to thrust. </br> Click to shoot. "
-
-	let newGameBut = document.createElement("button")
-	newGameBut.innerHTML = "Start game"
-	newGameBut.onclick = () => {
-		getNewPlayer()
-		paused = false
-		document.body.removeChild(dialog)
-	}
-
-	dialog.appendChild(newGameBut)
-	dialog.appendChild(msg2)
-	dialog.appendChild(createDiv(""))
 	dialog.style.height = "100%"
 }
 function updatePlayer() {
-	let allDead = true
 	Object.values(player.shipOpts).forEach(component => {
 		if (!component.isDead && component.hp <= 0) {
 			component.isDead = true
 			if (component == player.shipOpts.hull) {
 				Object.values(player.shipOpts).forEach(component =>
-					addBrokenComponent(
-						player.x,
-						player.y,
-						player.size,
-						player.rot + Math.PI * 0.5,
-						component
-					)
+					addBrokenComponent(player, component)
 				)
 				player.isDead = true
 				window.setTimeout(() => {
@@ -1234,7 +1246,10 @@ function updatePlayer() {
 			if (distPoints(player, pPos) < planet.rad) {
 				Object.values(player.shipOpts).forEach(component => {
 					player.isOnPlanet = true
-					component.hp = Math.min(component.maxHp, component.hp + 0.1)
+					component.hp = Math.min(
+						component.maxHp,
+						component.hp + component.maxHp / 100
+					)
 					if (component.hp == component.maxHp) {
 						component.isDead = false
 					} else {
@@ -1253,12 +1268,10 @@ function updatePlayer() {
 		keysdown["w"] ||
 		keysdown["W"]
 	) {
-		player.thrust.x += Math.cos(player.rot) * speed
-		player.thrust.y += Math.sin(player.rot) * speed
+		posPlusAng(player.thrust, player.rot, speed)
 	}
 	if (keysdown["ArrowDown"] || keysdown["s"] || keysdown["S"]) {
-		player.thrust.x -= Math.cos(player.rot) * speed
-		player.thrust.y -= Math.sin(player.rot) * speed
+		posPlusAng(player.thrust, player.rot, -speed)
 	}
 
 	let turn = -turnTowards(
@@ -1279,37 +1292,27 @@ function updatePlayer() {
 		player.rot += turn * turnSpeed
 	}
 
-	// if (keysdown["ArrowLeft"]) {
-	// 	player.rotThrust -= speed * 0.7
-	// }
-	// if (keysdown["ArrowRight"]) {
-	// 	player.rotThrust += speed * 0.7
-	// }
+	if (keysdown["ArrowLeft"]) {
+		posPlusAng(player.thrust, player.rot + PIH, speed)
+	}
+	if (keysdown["ArrowRight"]) {
+		posPlusAng(player.thrust, player.rot + PIH, -speed)
+	}
 
-	// player
-	// } else {
-	// }
-	player.mot.x += player.thrust.x
-	player.mot.y += player.thrust.y
+	posPlusPos(player.mot, player.thrust)
 
 	if (getPlayerSpeed() > 299792) {
 		let factor = getPlayerSpeed() / 299792
-		player.mot.x *= 1 / factor
-		player.mot.y *= 1 / factor
+		posMult(player.mot, 1 / factor)
 	}
 
-	player.x += player.mot.x
-	player.y += player.mot.y
-	// player.rot += player.rotThrust
-	player.thrust.x = 0
-	player.thrust.y = 0
-	// player.rotThrust *= 0.9 + (player.shipOpts.wings.isDead ? 0.019 : 0)
-	// Math.abs(player.rotThrust) < 0.001 ? (player.rotThrust = 0) : null
+	posPlusPos(player, player.mot)
+
+	posMult(player.thrust, 0)
 
 	checkCollisions(player, true)
 }
-var bulletHits = []
-var bulletHitsSmoke = []
+
 function checkCollisions(ship, ignoreBroken) {
 	Object.entries(bullets)
 		.filter(entry => entry[0] != ship.seed)
@@ -1319,187 +1322,65 @@ function checkCollisions(ship, ignoreBroken) {
 			let bulletsOfSeed = entry[1]
 			for (let i = bulletsOfSeed.length - 1; i >= 0; i--) {
 				let bullet = bulletsOfSeed[i]
-				let dis = dist(bullet[0], bullet[1], ship.x, ship.y)
-				let ang = angle(bullet[0], bullet[1], ship.x, ship.y)
-				let x = Math.cos(ang - ship.rot + Math.PI * 0.5) * dis
-				let y = Math.sin(ang - ship.rot + Math.PI * 0.5) * dis
-				let wings = ship.shipOpts.wings
-				if (
-					(!wings.isDead || ignoreBroken) &&
-					c.isPointInPath(wings.path, x, y)
-				) {
-					bulletsOfSeed.splice(i, 1)
-					wings.hitMaskPath.moveTo(x, y)
-					wings.hitMaskPath.arc(x, y, 0.15 * Math.random(), 0, 8)
-					wings.hp = Math.max(0, wings.hp - bullet[4])
-					wings.isHit = 15
-					addBulletHit(x, y, ship)
-					addBulletHitSmoke(bullet[0], bullet[1], getBulletColor(seed))
-					continue
-				}
-				let thrust = ship.shipOpts.thrust
-				if (
-					(!thrust.isDead || ignoreBroken) &&
-					c.isPointInPath(thrust.path, x, y)
-				) {
-					bulletsOfSeed.splice(i, 1)
-					thrust.hitMaskPath.moveTo(x, y)
-					thrust.hitMaskPath.arc(x, y, 0.15 * Math.random(), 0, 8)
-					thrust.hp = Math.max(0, thrust.hp - bullet[4])
-					thrust.isHit = 15
-					addBulletHit(x, y, ship)
-					addBulletHitSmoke(bullet[0], bullet[1], getBulletColor(seed))
-					continue
-				}
-				let weapon = ship.shipOpts.weapons
-				if (
-					(!weapon.isDead || ignoreBroken) &&
-					c.isPointInPath(weapon.colPath, x, y)
-				) {
-					bulletsOfSeed.splice(i, 1)
-					weapon.hitMaskPath.moveTo(x, y)
-					weapon.hitMaskPath.arc(x, y, 0.15 * Math.random(), 0, 8)
-					weapon.hp = Math.max(0, weapon.hp - bullet[4])
-					weapon.isHit = 15
-					addBulletHit(x, y, ship)
-					addBulletHitSmoke(bullet[0], bullet[1], getBulletColor(seed))
-					continue
-				}
-				let hull = ship.shipOpts.hull
-				if (
-					(!hull.isDead || ignoreBroken) &&
-					c.isPointInPath(hull.path, x, y)
-				) {
-					bulletsOfSeed.splice(i, 1)
-					hull.hitMaskPath.moveTo(x, y)
-					hull.hitMaskPath.arc(x, y, 0.15 * Math.random(), 0, 8)
-					hull.hp = Math.max(0, hull.hp - bullet[4])
-					hull.isHit = 15
-					addBulletHit(x, y, ship)
-					addBulletHitSmoke(bullet[0], bullet[1], getBulletColor(seed))
-				}
+				let da = disAng(bullet[0], bullet[1], ship.x, ship.y)
+				let x = Math.cos(da.ang - ship.rot + PIH) * da.dis
+				let y = Math.sin(da.ang - ship.rot + PIH) * da.dis
+
+				Object.keys(components).forEach(key => {
+					let comp = ship.shipOpts[key]
+					if (
+						(!comp.isDead || ignoreBroken) &&
+						c.isPointInPath(comp.path, x, y)
+					) {
+						bulletsOfSeed.splice(i, 1)
+						comp.hitMaskPath.moveTo(x, y)
+						comp.hitMaskPath.arc(x, y, 0.15 * Math.random(), 0, 8)
+						comp.hp = Math.max(0, comp.hp - bullet[4])
+						comp.isHit = 15
+						addBulletHit(x, y, ship)
+						addBulletHitSmoke(bullet, getBulletColor(seed))
+						return
+					}
+				})
 			}
 		})
 }
 
 function addBulletHit(x, y, anchor) {
-	bulletHits.push([x, y, 20, anchor])
+	bulletHits.add([20 * Math.random(), x, y, anchor])
 }
-function addBrokenComponent(x, y, size, rot, component) {
-	let ons = getOnScreenPos(x, y)
-	brokenComponents.push([
+function addBrokenComponent(ship, component) {
+	let ons = getOnScreenPos(ship.x, ship.y)
+	brokenComponents.add([
+		250,
 		ons.x,
 		ons.y,
-		size,
-		rot,
-		Math.random() * 8,
-		Math.random() * 1,
-		component,
-		250
+		ship.size,
+		ship.rot + PIH,
+		rndBtwn(0, 8),
+		rndBtwn(0, 1),
+		component
 	])
 }
-function renderBrokenComponents() {
-	for (let i = brokenComponents.length - 1; i >= 0; i--) {
-		let component = brokenComponents[i]
-		c.fillStyle = rgb(component[6].color)
-		if (component[7]--) {
-			c.save()
-			c.translate(component[0], component[1])
-			c.rotate(component[3])
-			c.scale(zoom * component[2], zoom * component[2])
-			c.fill(component[6].path)
 
-			c.restore()
-			component[0] += Math.cos(component[4]) * component[5]
-			component[1] += Math.sin(component[4]) * component[5]
-			component[3] += 0.04
-			component[2] *= 0.99
-		} else {
-			brokenComponents.splice(i, 1)
-		}
-	}
-}
 function addTrailSmoke(x, y, dir) {
-	for (let i = 0; i < 2; i++) {
-		trailSmoke.push([
-			x,
-			y,
-			dir + (Math.random() - Math.random()) * 0.1,
-			100 * Math.random(),
-			10 + 50 * Math.random()
-		])
-		if (trailSmoke.length > 250) {
-			trailSmoke.splice(0, 1)
-		}
-	}
+	trailSmoke.add([
+		rndBtwn(5, 50),
+		x,
+		y,
+		dir + rndBtwn(-0.1, 0.1),
+		rndBtwn(40, 60)
+	])
 }
-function addBulletHitSmoke(x, y, color) {
-	for (let i = 0; i < 2 + Math.random() * 5; i++) {
-		bulletHitsSmoke.push([
-			x + (Math.random() - Math.random()) * 0.5,
-			y + (Math.random() - Math.random()) * 0.5,
-			20,
-			color
-		])
-		if (bulletHitsSmoke.length > 100) {
-			bulletHitsSmoke.splice(0, 1)
-		}
-	}
+function addBulletHitSmoke(bul, color) {
+	bulletSmokes.add([
+		rndBtwn(5, 20),
+		bul[0] + rndBtwn(-1, 1),
+		bul[1] + rndBtwn(-1, 1),
+		color
+	])
 }
-function renderTrailSmoke() {
-	c.fillStyle = "rgba(255,255,55,0.3)"
-	c.beginPath()
-	for (let i = trailSmoke.length - 1; i >= 0; i--) {
-		if (--trailSmoke[i][3] > 0) {
-			trailSmoke[i][0] -= (Math.cos(trailSmoke[i][2]) * trailSmoke[i][4]) / 100
-			trailSmoke[i][1] -= (Math.sin(trailSmoke[i][2]) * trailSmoke[i][4]) / 100
-			trailSmoke[i][2] += (Math.random() - Math.random()) * 0.1
-			trailSmoke[i][4] *= 0.999
-			let onsc = getOnScreenPos(trailSmoke[i][0], trailSmoke[i][1])
-			let siz = ((0.3 * trailSmoke[i][3]) / 100) * zoom
 
-			c.moveTo(onsc.x, onsc.y)
-			c.arc(onsc.x, onsc.y, siz, 0, 8)
-		} else {
-			trailSmoke.splice(i, 1)
-		}
-	}
-	c.fill()
-	c.closePath()
-}
-function renderBulletHits() {
-	for (let i = bulletHits.length - 1; i >= 0; i--) {
-		if (bulletHits[i][2]--) {
-			let dis = dist(0, 0, bulletHits[i][0], bulletHits[i][1])
-			let ang = angle(0, 0, bulletHits[i][0], bulletHits[i][1])
-			let x = Math.cos(ang + Math.PI * 0.5 + bulletHits[i][3].rot) * dis
-			let y = Math.sin(ang + Math.PI * 0.5 + bulletHits[i][3].rot) * dis
-			let pos = getOnScreenPos(bulletHits[i][3].x + x, bulletHits[i][3].y + y)
-			hitExplosion(pos, 0.02 * Math.min(15, zoom))
-		} else {
-			bulletHits.splice(i, 1)
-		}
-	}
-
-	for (let i = bulletHitsSmoke.length - 1; i >= 0; i--) {
-		let rn = Math.random()
-		if (bulletHitsSmoke[i][2]--) {
-			let bullet = bulletHitsSmoke[i]
-			c.fillStyle = bullet[3]
-
-			let onsc = getOnScreenPos(bullet[0], bullet[1])
-			let siz = bullet[2] / 20
-			c.fillRect(
-				onsc.x - (siz / 2) * zoom,
-				onsc.y - (siz / 2) * zoom,
-				siz * zoom,
-				siz * zoom
-			)
-		} else {
-			bulletHitsSmoke.splice(i, 1)
-		}
-	}
-}
 function updatePlayerGrav(opts) {
 	opts.planets.forEach(planet => {
 		let pos = getPlanetPos(planet, time)
@@ -1514,25 +1395,29 @@ function updatePlayerGrav(opts) {
 				(Math.sin(ang) * 0.1 * planet.rad + 0.5 * (nextPos.y - pos.y)) /
 				Math.max(planet.rad, dis) ** 2
 
-			// c.strokeStyle = "yellow"
-			// c.lineWidth = 0.5
-			// let on = getOnScreenPos(player.x, player.y)
-			// c.beginPath()
-			// c.moveTo(on.x, on.y)
-			// c.lineTo(
-			// 	on.x +
-			// 		((Math.cos(ang) * 10 * planet.rad) / Math.max(planet.rad, dis) ** 2) *
-			// 			1000,
-			// 	on.y +
-			// 		((Math.sin(ang) * 10 * planet.rad) / Math.max(planet.rad, dis) ** 2) *
-			// 			1000
-			// )
-			// c.stroke()
-			// c.closePath()
+			if (debug) {
+				c.strokeStyle = "yellow"
+				c.lineWidth = 0.5
+				let on = getOnScreenPos(player.x, player.y)
+				c.beginPath()
+				c.moveTo(on.x, on.y)
+				c.lineTo(
+					on.x +
+						((Math.cos(ang) * 10 * planet.rad) /
+							Math.max(planet.rad, dis) ** 2) *
+							1000,
+					on.y +
+						((Math.sin(ang) * 10 * planet.rad) /
+							Math.max(planet.rad, dis) ** 2) *
+							1000
+				)
+				c.stroke()
+				c.closePath()
+			}
 		}
 	})
-	let sunAng = anglePoints(player, opts.middle)
-	let sunDis = distPoints(opts.middle, player)
+	let sunAng = anglePoints(player, opts.pos)
+	let sunDis = distPoints(opts.pos, player)
 	player.mot.x +=
 		(Math.cos(sunAng) * 0.1 * opts.starRad) /
 		Math.max(opts.starRad, sunDis) ** 2
@@ -1540,23 +1425,25 @@ function updatePlayerGrav(opts) {
 		(Math.sin(sunAng) * 0.1 * opts.starRad) /
 		Math.max(opts.starRad, sunDis) ** 2
 
-	// c.strokeStyle = "yellow"
-	// c.lineWidth = 0.5
-	// let on = getOnScreenPos(player.x, player.y)
-	// c.beginPath()
-	// c.moveTo(on.x, on.y)
-	// c.lineTo(
-	// 	on.x +
-	// 		((Math.cos(sunAng) * 20 * opts.starRad) /
-	// 			Math.max(opts.starRad, sunDis) ** 2) *
-	// 			1000,
-	// 	on.y +
-	// 		((Math.sin(sunAng) * 20 * opts.starRad) /
-	// 			Math.max(opts.starRad, sunDis) ** 2) *
-	// 			1000
-	// )
-	// c.stroke()
-	// c.closePath()
+	if (debug) {
+		c.strokeStyle = "yellow"
+		c.lineWidth = 0.5
+		let on = getOnScreenPos(player.x, player.y)
+		c.beginPath()
+		c.moveTo(on.x, on.y)
+		c.lineTo(
+			on.x +
+				((Math.cos(sunAng) * 20 * opts.starRad) /
+					Math.max(opts.starRad, sunDis) ** 2) *
+					1000,
+			on.y +
+				((Math.sin(sunAng) * 20 * opts.starRad) /
+					Math.max(opts.starRad, sunDis) ** 2) *
+					1000
+		)
+		c.stroke()
+		c.closePath()
+	}
 }
 function drawPlanet(planet) {
 	let planetPos = getPlanetPos(planet, time)
@@ -1596,7 +1483,7 @@ function drawPlanet(planet) {
 	c.arc(offX, offY, planet.rad * zoom * 2, 0, 8)
 	c.closePath()
 	c.fill()
-	if (playerDis < planet.rad * 2) {
+	if (playerDis < planet.rad * 3) {
 		let playerOnscreen = getOnScreenPos(player.x, player.y)
 
 		if (!player.isDead) {
@@ -1643,7 +1530,7 @@ function drawPlanet(planet) {
 	})
 	c.restore()
 }
-var quadrantCache = {}
+
 function getStarCol(zoomRad, a, rn1, rn2) {
 	let col = Math.min(255, -zoomRad * 5 + 10 + Math.floor(rn1 * 200))
 	let col2 = Math.min(255, -zoomRad * 5 + 10 + Math.floor(rn2 * 200))
@@ -1685,12 +1572,7 @@ function isGalaxyDiscovered(x, y) {
 		discoveredGalaxies[x].hasOwnProperty(y)
 	)
 }
-var discoveredGalaxies = {
-	0: { "-1": true }
-}
-var galaxyOptsCache = {}
-let seeds = {}
-var starImg
+
 function getStarImg() {
 	if (!starImg) {
 		let cnv = document.createElement("canvas")
@@ -1700,15 +1582,14 @@ function getStarImg() {
 		for (let i = 0; i < 25; i++) {
 			let rad = Math.random() * 60
 			let rad2 = Math.random() * 60
-			ctx.ellipse(75, 75, rad, rad, Math.random() * Math.PI * 2, 0, Math.PI * 2)
+			ctx.ellipse(75, 75, rad, rad, Math.random() * PI2, 0, PI2)
 			ctx.fill()
 		}
 		starImg = cnv
 	}
 	return starImg
 }
-var playerPath = []
-var enemyCache = {}
+
 function getGalaxyOpts(x, y) {
 	if (!hasQuadrantGalaxy({ x, y })) {
 		return {}
@@ -1720,12 +1601,7 @@ function getGalaxyOpts(x, y) {
 		let a = x > y ? -2 * x - 1 : 2 * x
 		let b = x > y ? -2 * y - 1 : 2 * y
 		let seed = (a + b) * (a + b + 1) * 0.5 + b
-		//2 ** x * 3 ** y
-		let rn = getNewRng(
-			//12(a+b)(a+b+1)+b
-			// 0.5 * (x + y) * (x + y + 1) + y
-			seed
-		)
+		let rn = getNewRng(seed)
 
 		if (!seeds.hasOwnProperty(seed)) {
 			seeds[seed] = [x, y]
@@ -1738,9 +1614,7 @@ function getGalaxyOpts(x, y) {
 		let offsetY =
 			(Math.sign(rn() - rn()) * 0.1 + (rn() - rn()) * 0.2) * quadrantSize
 
-		let starX = x * quadrantSize + quadrantSize / 2 + offsetX
-		let starY = y * quadrantSize + quadrantSize / 2 + offsetY
-		let middle = {
+		let starPos = {
 			x: x * quadrantSize + quadrantSize / 2 + offsetX,
 			y: y * quadrantSize + quadrantSize / 2 + offsetY
 		}
@@ -1764,14 +1638,13 @@ function getGalaxyOpts(x, y) {
 				dist: curDis + dist,
 				spd: rn() * 0.0012 + 0.0005,
 				spd2: rn() * 0.002 + 0.001,
-				startAng: rn() * Math.PI * 2,
-				starPos: middle,
+				startAng: rn() * PI2,
+				starPos,
 				col: getPlanetColor(rn),
 				star: [x, y],
 				index: i
 			}
 			curDis += dist + rad
-			planet.pos = getPlanetPos(planet, time)
 			planets.push(planet)
 		}
 		let rn1 = rn()
@@ -1779,7 +1652,7 @@ function getGalaxyOpts(x, y) {
 		let col = (zoom, a) => getStarCol(starRad * zoom, 1, rn1, rn2)
 		let name = getGalaxyName(rn)
 		galaxyOptsCache[x][y] = {
-			middle,
+			pos: starPos,
 			planets,
 			starRad,
 			size: curDis,
@@ -1826,20 +1699,31 @@ function getEnemies(x, y) {
 
 function getEnemyOpts(rn, seed) {
 	let lvl = Math.min(500, player.level) / 500
-	const shotDis = 20 + lvl * rn() * (200 - 20)
+	const shotDis = 30 + lvl * rn() * (250 - 30)
 	const shotSpeed = 0.01 + 0.19 * lvl * rn()
 	const shotLife = shotDis / shotSpeed
-
+	let spd =
+		0.1 -
+		0.097 *
+			getInRange(
+				(Math.log10(1 + Math.max(0, 500 - player.level)) / Math.log10(501)) *
+					rn(),
+				0,
+				1
+			)
+	console.log("Enemy speed:" + spd)
 	return {
 		seed: seed,
 		shotDis: shotDis,
 		turnSpeed: 0.05 + lvl * 0.04 * rn(),
 		turnStability: 0.95,
-		speed: 0.001 + (0.1 - 0.001) * lvl * rn(),
-		enemyDistance: Math.max(75, shotLife * shotSpeed * (1 + rn())),
-		dmg: 1 + lvl * 1000 * rn(),
-		fireRate:
-			60 - Math.ceil((Math.log(1 + player.level) / Math.log(501)) * 59 * rn()),
+		speed: spd,
+		enemyDistance: Math.max(75, shotDis * (1 + rn())),
+		dmg: Math.ceil(1 + lvl * 1000 * rn()),
+		fireRate: Math.min(
+			60,
+			60 - Math.ceil((Math.log(1 + player.level) / Math.log(501)) * 59 * rn())
+		),
 		shotSpeed: shotSpeed,
 		size: 1 + rn() * 1,
 		shotLife: shotLife,
@@ -1853,25 +1737,7 @@ export function getPlanetPos(planet, time) {
 		y: planet.starPos.y + Math.sin(ang) * planet.dist
 	}
 }
-function star(ct, x, y, rad) {
-	let rndAng = Math.random() * Math.PI * 2
-	ct.lineWidth = rad * 0.5
-	ct.beginPath()
-	drawEvenTriangle(ct, x, y, rad, rndAng)
 
-	drawEvenTriangle(ct, x, y, rad, rndAng + Math.PI)
-	ct.fill()
-	ct.closePath()
-}
-export const drawEvenTriangle = (ct, x, y, rad, turn) => {
-	let ang1 = (Math.PI * 2) / 3
-	ct.moveTo(x + Math.cos(turn) * rad, y + Math.sin(turn) * rad)
-	ct.lineTo(x + Math.cos(turn + ang1) * rad, y + Math.sin(turn + ang1) * rad)
-	ct.lineTo(
-		x + Math.cos(turn + ang1 * 2) * rad,
-		y + Math.sin(turn + ang1 * 2) * rad
-	)
-}
 function getOnScreenPos(x, y) {
 	return {
 		x: w / 2 - screenPos.x * zoom + x * zoom,
@@ -1879,49 +1745,6 @@ function getOnScreenPos(x, y) {
 	}
 }
 
-function rnChars(...nums) {
-	return nums
-		.map(num => String.fromCharCode(65 + Math.floor(26 * num)))
-		.join("")
-}
-function rnRoman(num) {
-	return num < 0.2
-		? "IV."
-		: num < 0.4
-		? "V."
-		: num < 0.6
-		? "III."
-		: num < 0.8
-		? "II."
-		: ""
-}
-function getGalaxyName(rn) {
-	let str = ""
-	for (let i = Math.round(rn()); i < 5 + rn() * 3; i++) {
-		str +=
-			i % 2
-				? vowel[Math.floor(rn() * (vowel.length - 0.1))]
-				: consonant[Math.floor(rn() * (consonant.length - 0.1))]
-	}
-	str += rn() > 0.5 ? " " + rnRoman(rn()) : ""
-	return str
-}
-function getRaceName(rn) {
-	let str = ""
-	for (let i = Math.round(rn()); i < 3 + rn() * 3; i++) {
-		let letter =
-			(i + 1) % 2
-				? vowel[Math.floor(rn() * (vowel.length - 0.1))]
-				: consonant[Math.floor(rn() * (consonant.length - 0.1))]
-		str += str.length == 0 ? letter : letter.toLowerCase()
-	}
-	str += rn() > 0.5 ? "ian" : "ord"
-	return str
-}
-
-var vowel = "AEIOUY"
-var consonant = "BCDFGHJKLMNPQRSTVWXY"
-var bulletColors = {}
 function getBulletColor(seed) {
 	if (!bulletColors.hasOwnProperty(seed)) {
 		let rn = getNewRng(seed)
@@ -1930,14 +1753,6 @@ function getBulletColor(seed) {
 			Math.floor(155 + 100 * rn()),
 			Math.floor(155 + 100 * rn())
 		]
-		// bulletColors[seed] =
-		// 	"rgba(" +
-		// 	Math.floor(155 + 100 * rn()) +
-		// 	"," +
-		// 	Math.floor(155 + 100 * rn()) +
-		// 	"," +
-		// 	Math.floor(155 + 100 * rn()) +
-		// 	",1)"
 	}
 	return bulletColors[seed]
 }
@@ -1951,7 +1766,6 @@ const drawHUD = (galaxy, enemies) => {
 		drawRadar(galaxy, enemies)
 	} else {
 		drawInterstellarRadar()
-		//TODO Draw interstellar  map
 	}
 
 	drawHudShip()
@@ -1971,6 +1785,8 @@ const drawHUD = (galaxy, enemies) => {
 		Object.entries(stats).forEach((entry, i) => {
 			ch.fillText(entry[0] + ": " + entry[1], 20, 430 + i * 30)
 		})
+
+		ch.fillText("playerLock:" + enemyLock, 20, 700)
 	}
 	// c.fillText("Health:", 30, 90)
 	// c.fillRect(30, 110, (100 * player.health) / 100, 20)
@@ -2025,7 +1841,7 @@ function drawComponentHp() {
 	ch.strokeRect(x, y + 30, 100, 4)
 	ch.fillRect(x, y + 30, 100 - (100 * player.shotCd) / player.fireRate, 4)
 }
-var blinkTick = 0
+
 function drawHudShip() {
 	ch.strokeStyle = "green"
 	ch.fillStyle = "black"
@@ -2035,7 +1851,7 @@ function drawHudShip() {
 
 	ch.save()
 	ch.translate(150, 175)
-	ch.rotate(player.rot + Math.PI * 0.5)
+	ch.rotate(player.rot + PIH)
 	let scale = 40
 	ch.lineWidth = 0.03
 	let weaponOpts = player.shipOpts.weapons
@@ -2123,10 +1939,10 @@ function drawInterstellarRadar() {
 		for (let qy = currentGal.y - size; qy < currentGal.y + size; qy++) {
 			if (hasQuadrantGalaxy({ x: qx, y: qy })) {
 				let opts = getGalaxyOpts(qx, qy)
-				ch.moveTo(getRadarX(opts.middle.x), getRadarY(opts.middle.y))
+				ch.moveTo(getRadarX(opts.pos.x), getRadarY(opts.pos.y))
 				ch.arc(
-					getRadarX(opts.middle.x),
-					getRadarY(opts.middle.y),
+					getRadarX(opts.pos.x),
+					getRadarY(opts.pos.y),
 					opts.starRad / ((quadrantSize * size) / 300),
 					0,
 					8
@@ -2147,8 +1963,8 @@ function drawInterstellarRadar() {
 				let wd = ch.measureText(tx).width
 				ch.fillText(
 					tx,
-					getRadarX(opts.middle.x) - wd / 2,
-					getRadarY(opts.middle.y) + 5
+					getRadarX(opts.pos.x) - wd / 2,
+					getRadarY(opts.pos.y) + 5
 				)
 			}
 		}
@@ -2190,8 +2006,8 @@ function drawRadar(galaxy, enemies) {
 	ch.beginPath()
 
 	let scale = (galaxy.size * 1.2) / 150
-	let getRadarX = theX => x + (theX - galaxy.middle.x) / scale
-	let getRadarY = theY => y + (theY - galaxy.middle.y) / scale
+	let getRadarX = theX => x + (theX - galaxy.pos.x) / scale
+	let getRadarY = theY => y + (theY - galaxy.pos.y) / scale
 
 	ch.arc(x, y, galaxy.starRad / scale, 0, 8)
 	galaxy.planets.forEach(planet => {
@@ -2341,4 +2157,8 @@ function getComponentColor(component) {
 			",1)"
 		)
 	}
+}
+
+function isPosOnScreen(pos, marg) {
+	return pos.x > -marg && pos.x < w + marg && pos.y > -marg && pos.y < h + marg
 }

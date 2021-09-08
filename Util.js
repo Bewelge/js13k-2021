@@ -1,34 +1,3 @@
-function formatTime(seconds, showMilis) {
-	seconds = Math.max(seconds, 0)
-	let date = new Date(seconds * 1000)
-	let timeStrLength = showMilis ? 11 : 8
-	try {
-		let timeStr = date.toISOString().substr(11, timeStrLength)
-		if (timeStr.substr(0, 2) == "00") {
-			timeStr = timeStr.substr(3)
-		}
-		return timeStr
-	} catch (e) {
-		console.error(e)
-		//ignore this. only seems to happend when messing with breakpoints in devtools
-	}
-}
-function arrayContains(arr, item) {
-	for (let i = 0; i < arr.length; i++) {
-		if (arr[i] == item) {
-			return true
-		}
-	}
-	return false
-}
-/**
- * @param {CanvasRenderingContext2D} ctx
- * @param {Number} x
- * @param {Number} y
- * @param {Number} width
- * @param {Number} height
- * @param {Number} radius
- */
 function drawRoundRect(ctx, x, y, width, height, radius, isRounded) {
 	// radius = radius * 2 < ( Math.min( height, width ) ) ? radius : ( Math.min( height, width ) ) / 2
 	if (typeof radius === "undefined") {
@@ -84,57 +53,6 @@ function drawRoundRect(ctx, x, y, width, height, radius, isRounded) {
 	ctx.closePath()
 }
 
-function replaceAllString(text, replaceThis, withThat) {
-	return text.replace(new RegExp(replaceThis, "g", "m"), withThat)
-}
-
-function groupArrayBy(arr, keyFunc) {
-	let keys = {}
-	arr.forEach(el => (keys[keyFunc(el)] = []))
-	Object.keys(keys).forEach(key => {
-		arr.forEach(el => (keyFunc(el) == key ? keys[keyFunc(el)].push(el) : null))
-	})
-	return keys
-}
-function loadJson(url, callback) {
-	let request = new XMLHttpRequest()
-	request.overrideMimeType("application/json")
-	request.open("GET", url, true)
-	request.onreadystatechange = function () {
-		if (request.readyState == 4 && request.status == "200") {
-			callback(request.responseText)
-		}
-	}
-	request.send(null)
-}
-
-function getScrollbarWidth() {
-	let div = document.createElement("div")
-	div.style.visibility = "hidden"
-	div.style.overflow = "scroll"
-	div.style.msOverflowStyle = "scrollbar"
-	document.body.appendChild(div)
-	let inner = document.createElement("div")
-	div.appendChild(inner)
-	let wd = div.offsetWidth - inner.offsetWidth
-	div.parentNode.removeChild(div)
-	return wd
-}
-
-function iOS() {
-	return (
-		[
-			"iPad Simulator",
-			"iPhone Simulator",
-			"iPod Simulator",
-			"iPad",
-			"iPhone",
-			"iPod"
-		].includes(navigator.platform) ||
-		// iPad on iOS 13 detection
-		(navigator.userAgent.includes("Mac") && "ontouchend" in document)
-	)
-}
 function roundToDecimals(value, decimalDigits) {
 	let rounder = Math.pow(10, decimalDigits)
 	return Math.floor(value * rounder) / rounder
@@ -293,14 +211,6 @@ function nFormatter(num, digits) {
 	return num
 }
 
-function getCssVariable(aVarName) {
-	return getComputedStyle(document.documentElement).getPropertyValue(
-		"--" + aVarName
-	)
-}
-function setCssVariable(aVarName, value) {
-	document.documentElement.style.setProperty("--" + aVarName, value)
-}
 function distPoints(point1, point2) {
 	try {
 		return dist(point1.x, point1.y, point2.x, point2.y)
@@ -318,20 +228,6 @@ function anglePoints(point1, point2) {
 function angle(p1x, p1y, p2x, p2y) {
 	return Math.atan2(p2y - p1y, p2x - p1x)
 }
-// function compareAngles(angl, angl2) {
-// 	angl = angl % (Math.PI * 2)
-// 	angl -= Math.PI
-// 	if (angl < Math.PI * -1) {
-// 		angl += Math.PI * 2
-// 	}
-// 	if (angl2 > Math.PI) {
-// 		angl2 -= Math.PI * 2
-// 	}
-// 	if (angl2 < -1 * Math.PI) {
-// 		angl2 += Math.PI * 2
-// 	}
-// 	Math.abs(angl2 - angl)
-// }
 function compareAngles(a, b) {
 	return Math.abs(
 		((a + Math.PI * 2) % (Math.PI * 2)) - ((b + Math.PI * 2) % (Math.PI * 2))
@@ -394,19 +290,127 @@ function escapeHtml(unsafe) {
 function rgba(r, g, b, a) {
 	return "rgba(" + r + "," + g + "," + b + "," + a + ")"
 }
+function posEquals(p1, p2) {
+	return p1.x == p2.x && p1.y == p2.y
+}
+function getInRange(num, min, max) {
+	return Math.min(max, Math.max(min, num))
+}
 
+function disAngOrigin(x, y) {
+	return {
+		angle: angle(0, 0, x, y),
+		dis: dist(0, 0, x, y)
+	}
+}
+function disAng(x0, y0, x1, y2) {
+	return {
+		ang: angle(x0, y0, x1, y2),
+		dis: dist(x0, y0, x1, y2)
+	}
+}
+function translateToAndDraw(c, x, y, draw) {
+	c.save()
+	c.translate(x, y)
+	draw()
+	c.restore()
+}
+export const line = (c, pos0, pos1, col) => {
+	if (col) {
+		c.strokeStyle = "white"
+	}
+	c.beginPath()
+	c.moveTo(pos0.x, pos0.y)
+	c.lineTo(pos1.x, pos1.y)
+	c.stroke()
+	c.closePath()
+}
+export const createDiv = className => {
+	let d = document.createElement("div")
+	d.className = className
+	return d
+}
+
+export const createDialog = () => {
+	let dialog = createDiv("dialog")
+	document.body.appendChild(dialog)
+	return dialog
+}
+export const titleDiv = txt => {
+	let d = createDiv("title")
+	d.innerHTML = txt
+	return d
+}
+export const subTitleDiv = txt => {
+	let d = createDiv("subTitle")
+	d.innerHTML = txt
+	return d
+}
+export const getButton = (txt, onclick) => {
+	let b = document.createElement("button")
+	b.onclick = onclick
+	b.innerHTML = txt
+	return b
+}
+
+export const createCnv = (w, h) => {
+	let c = document.createElement("canvas")
+	c.width = w
+	c.height = h
+	return c
+}
+
+export const scaleRotate = (c, sc, rot) => {
+	c.scale(sc, sc)
+	c.rotate(rot)
+}
+export const rndBtwn = (min = 0, max = 1) => {
+	return min + (max - min) * Math.random()
+}
+export const appendChildren = (parent, children) => {
+	children.forEach(child => parent.appendChild(child))
+}
+
+export const pos = (x, y) => {
+	return { x, y }
+}
+export const setPos = (pos, x, y) => {
+	pos.x = x
+	pos.y = y
+}
+export const posPlusPos = (pos, pos0) => {
+	pos.x += pos0.x
+	pos.y += pos0.y
+}
+export const posPlus = (pos, plus) => {
+	pos.x += plus
+	pos.y += plus
+}
+export const _posMult = (pos, mult) => {
+	return { x: pos.x * mult, y: pos.y * mult }
+}
+export const posMult = (pos, mult) => {
+	pos.x *= mult
+	pos.y *= mult
+}
+export const posPlusAng = (pos, ang, dis) => {
+	pos.x += Math.cos(ang) * dis
+	pos.y += Math.sin(ang) * dis
+}
+export const _posPlusAng = (pos, ang, dis) => {
+	return {
+		x: pos.x + Math.cos(ang) * dis,
+		y: pos.y + Math.sin(ang) * dis
+	}
+}
+export const setFont = (c, size) => {
+	c.font = size + "px Gill Sans MT"
+}
+export const txtAt = (c, txt, x, y) => {}
 export {
-	formatTime,
-	arrayContains,
 	drawRoundRect,
-	replaceAllString,
-	groupArrayBy,
-	loadJson,
-	iOS,
 	roundToDecimals,
 	nFormatter,
-	getCssVariable,
-	setCssVariable,
 	distPoints,
 	dist,
 	anglePoints,
@@ -416,7 +420,11 @@ export {
 	findSideToTurn,
 	getRange,
 	getURLParams,
-	getScrollbarWidth,
 	escapeHtml,
-	rgba
+	rgba,
+	posEquals,
+	getInRange,
+	disAngOrigin,
+	disAng,
+	translateToAndDraw
 }

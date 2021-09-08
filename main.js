@@ -23,7 +23,6 @@ import {
 	turnTowards,
 	createCnv,
 	appendChildren,
-	posPlus,
 	posMult,
 	posPlusPos,
 	posPlusAng,
@@ -140,14 +139,14 @@ function getNewPlayer() {
 			y: 0
 		},
 		acc: 0.1,
-		speed: 0.003,
-		turnSpeed: 0.05,
+		speed: 0.005,
+		turnSpeed: 0.04,
 		turnStability: 0.95,
-		fireRate: 1, // 60,
+		fireRate: 60,
 		dmg: 1,
 		shotCd: 0,
 		shotLife: 20 / 0.01,
-		shotSpeed: 0.1, //0.01,
+		shotSpeed: 0.02,
 		shotDis: 30,
 
 		shipOpts: getShipOpts(randomStartSeed, 5 / 500)

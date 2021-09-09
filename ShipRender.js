@@ -1,172 +1,121 @@
-import { rgba, scaleRotate, translateToAndDraw } from "./Util.js"
+import { components } from "./components.js"
+import { rgba, rndBtwn, scaleRotate, translateToAndDraw } from "./Util.js"
 
-export const renderShip = (
-	c,
-	x,
-	y,
-	size,
-	opts,
-	zoom,
-	rot,
-	sunAng,
-	sunDis,
-	drawDmg,
-	isThrust,
-	isThrustLeft,
-	isThrustRight,
-	overwriteFill
-) => {
+export const renderShip = (c, x, y, size, shipOpts, rot, opts) => {
 	translateToAndDraw(c, x, y, () => {
-		scaleRotate(c, zoom * size, rot + Math.PI * 0.5)
+		scaleRotate(c, size, rot + Math.PI * 0.5)
 
-		if (!opts.weapons.isDead || !drawDmg) {
-			renderWeapons(c, opts, sunAng, sunDis, overwriteFill)
+		if (!shipOpts.weapons.isDead || !opts.showDmg) {
+			renderWeapons(c, shipOpts, opts)
 		}
-		if (!opts.wings.isDead || !drawDmg) {
-			renderWings(
-				opts,
-				c,
-				sunAng,
-				sunDis,
-				isThrustLeft,
-				isThrustRight,
-				overwriteFill
-			)
+		if (!shipOpts.wings.isDead || !opts.showDmg) {
+			renderWings(shipOpts, c, opts)
 		}
-		if (!opts.hull.isDead || !drawDmg) {
-			renderHull(opts, c, sunAng, sunDis, overwriteFill)
+		if (!shipOpts.hull.isDead || !opts.showDmg) {
+			renderHull(shipOpts, c, opts)
 		}
-		if (!opts.thrust.isDead || !drawDmg) {
-			renderThrust(opts, c, sunAng, sunDis, isThrust, overwriteFill)
+		if (!shipOpts.thrust.isDead || !opts.showDmg) {
+			renderThrust(shipOpts, c, opts)
 		}
 	})
 }
-export const renderThrust = (
-	opts,
-	c,
-	sunAng,
-	sunDis,
-	isThrust,
-	overwriteFill
-) => {
-	let stepW = opts.thrust.w2 / (opts.thrust.amount + 1)
-	shadePath(
-		c,
-		opts.thrust.path,
-		overwriteFill || rgb(opts.thrust.color),
-		overwriteFill || lighten(opts.thrust.color, 15),
-		sunAng,
-		sunDis
-	)
-	c.fillStyle = overwriteFill || rgb(opts.thrust.color)
-	shadePath(
-		c,
-		opts.thrust.path2,
-		overwriteFill || rgb(opts.thrust.color),
-		overwriteFill || lighten(opts.thrust.color, 15),
-		sunAng,
-		sunDis * 0.3
-	)
-	// c.fill(opts.thrust.path2)
-	for (let i = 1; i <= opts.thrust.amount; i++) {
-		c.fillStyle = "rgba(255,55,55,0.8)"
 
-		if (isThrust) {
-			c.fillRect(
-				-opts.thrust.w2 / 2 + i * stepW - opts.thrust.tw / 2,
-				opts.thrust.top + opts.thrust.h1 + opts.thrust.h2,
-				opts.thrust.tw,
-				Math.random() * 0.15 + 0.1
+function renderComponent(c, component, drawPaths, opts) {
+	drawPaths.forEach(path => {
+		if (opts.fill) {
+			c.fillStyle = opts.fill
+			c.fill(path)
+		}
+		if (opts.stroke) {
+			c.strokeStyle = opts.stroke
+			c.stroke(path)
+		}
+		if (!opts.stroke && !opts.fill) {
+			shadePath(
+				c,
+				path,
+				rgb(component.color),
+				lighten(component.color, 15),
+				opts.ang,
+				opts.dis
 			)
-			c.fillStyle = overwriteFill || "rgba(255,255,55,0.8)"
-
-			c.fillRect(
-				-opts.thrust.w2 / 2 + i * stepW - opts.thrust.tw / 2,
-				opts.thrust.top + opts.thrust.h1 + opts.thrust.h2,
-				opts.thrust.tw,
-				Math.random() * 0.15 + 0.1
-			)
+		}
+	})
+}
+export const renderThrust = (shipOpts, c, opts) => {
+	renderComponent(
+		c,
+		shipOpts.thrust,
+		[shipOpts.thrust.path, shipOpts.thrust.path2],
+		opts
+	)
+	let thrust = shipOpts.thrust
+	let stepW = thrust.w2 / (thrust.amount + 1)
+	for (let i = 1; i <= thrust.amount; i++) {
+		if (opts.boost) {
+			let y = thrust.top + thrust.h1 + thrust.h2
+			const x = -thrust.w2 / 2 + i * stepW - thrust.tw / 2
+			c.fillStyle = "rgba(255,55,55,0.8)"
+			c.fillRect(x, y, thrust.tw, rndBtwn(0.1, 0.25))
+			c.fillStyle = "rgba(255,255,55,0.8)"
+			c.fillRect(x, y, thrust.tw, rndBtwn(0.1, 0.25))
 		}
 	}
 }
 
-export const renderHull = (opts, c, sunAng, sunDis, overwriteFill) => {
-	shadePath(
-		c,
-		opts.hull.path,
-		overwriteFill || rgb(opts.hull.color),
-		overwriteFill || lighten(opts.hull.color, 15),
-		sunAng,
-		sunDis
-	)
-	c.save()
-	c.clip(opts.hull.hitMaskPath)
-	c.fillStyle = overwriteFill || "rgba(0,0,0,0.7)"
-	c.fill(opts.hull.path)
-	c.restore()
+export const renderHull = (shipOpts, c, opts) => {
+	renderComponent(c, shipOpts.hull, [shipOpts.hull.path], opts)
+	if (!opts.fill && !opts.stroke) {
+		c.save()
+		c.clip(shipOpts.hull.hitMaskPath)
+		c.fillStyle = opts.fill || "rgba(0,0,0,0.7)"
+		c.fill(shipOpts.hull.path)
+		c.restore()
 
-	let lgr = c.createLinearGradient(
-		0 - (opts.hull.topW / 2) * opts.hull.windowSize,
-		0,
-		0 + (opts.hull.topW / 2) * opts.hull.windowSize,
-		0
-	)
-	lgr.addColorStop(0, "rgba(50,250,250,1)")
-	lgr.addColorStop(1, "rgba(50,150,150,1)")
+		let x = (shipOpts.hull.topW / 2) * shipOpts.hull.windowSize
+		let lgr = c.createLinearGradient(-x, 0, x, 0)
+		lgr.addColorStop(0, "rgba(50,250,250,1)")
+		lgr.addColorStop(1, "rgba(50,150,150,1)")
 
-	let lgr2 = c.createLinearGradient(
-		0 - (opts.hull.topW / 2) * opts.hull.windowSize,
-		0,
-		0 + (opts.hull.topW / 2) * opts.hull.windowSize,
-		0
-	)
-	lgr2.addColorStop(0, "rgba(50,250,250,1)")
-	lgr2.addColorStop(1, "rgba(255,255,255,1)")
-	c.save()
-	c.scale(opts.hull.windowSize, opts.hull.windowSize)
+		let lgr2 = c.createLinearGradient(-x, 0, x, 0)
+		lgr2.addColorStop(0, "rgba(250,250,250,1)")
+		lgr2.addColorStop(1, "rgba(255,255,255,1)")
+		c.save()
+		c.scale(shipOpts.hull.windowSize, shipOpts.hull.windowSize)
 
-	shadePath(
-		c,
-		opts.hull.path,
-		overwriteFill || lgr,
-		overwriteFill || lgr2,
-		sunAng,
-		sunDis
-	)
-	c.restore()
+		shadePath(c, shipOpts.hull.path, lgr, lgr2, opts.ang, opts.dis)
+		c.restore()
+	}
 }
 
-export const renderWings = (
-	opts,
-	c,
-	sunAng,
-	sunDis,
-	isThrustLeft,
-	isThrustRight,
-	overwriteFill
-) => {
-	for (let i = 0; i < opts.wings.amount; i++) {
-		let wing = opts.wings.list[i]
+export const renderWings = (shipOpts, c, opts) => {
+	for (let i = 0; i < shipOpts.wings.amount; i++) {
+		let wing = shipOpts.wings.list[i]
 		shadePath(
 			c,
 			wing.path,
-			overwriteFill || rgb(wing.color),
-			overwriteFill || lighten(wing.color, 15),
-			sunAng,
-			sunDis
+			opts.fill || rgb(wing.color),
+			opts.fill || lighten(wing.color, 15),
+			opts.ng,
+			opts.sunDis
 		)
-		c.save()
-		c.clip(opts.wings.hitMaskPath)
-		c.fillStyle = overwriteFill || "rgba(0,0,0,0.7)"
-		c.fill(wing.path)
-		c.restore()
+		if (opts.stroke) {
+			c.stroke(wing.path)
+		}
+		if (opts.showDmg) {
+			c.save()
+			c.clip(shipOpts.wings.hitMaskPath)
+			c.fillStyle = opts.fill || "rgba(0,0,0,0.7)"
+			c.fill(wing.path)
+			c.restore()
+		}
 	}
 
-	if (isThrustLeft || isThrustRight) {
+	if (opts.boostLeft || opts.boostRight) {
 		let x = 0
 		let y = 0
 		let drawThrust = () => {
-			c.fillRect(x, y, 0.1, Math.random() * 0.15 + 0.2)
+			c.fillRect(x, y, 0.1, rndBtwn(0.2, 0.35))
 		}
 
 		let dr = () => {
@@ -175,43 +124,44 @@ export const renderWings = (
 			c.fillStyle = "rgba(255,255,55,0.8)"
 			drawThrust()
 		}
-		if (isThrustLeft) {
-			x = (opts.wings.maxW / 2) * 0.8 - 0.1
-			y = opts.wings.maxY
+		if (opts.boostLeft) {
+			x = (shipOpts.wings.maxW / 2) * 0.8 - 0.1
+			y = shipOpts.wings.maxY
 			dr()
 		}
-		if (isThrustRight) {
-			x = (-opts.wings.maxW / 2) * 0.8
-			y = opts.wings.maxY
+		if (opts.boostRight) {
+			x = (-shipOpts.wings.maxW / 2) * 0.8
+			y = shipOpts.wings.maxY
 			dr()
 		}
 	}
 }
 
-export const renderWeapons = (c, opts, sunAng, sunDis, overwriteFill) => {
-	c.fillStyle = rgb(opts.weapons.color)
+export const renderWeapons = (c, shipOpts, opts) => {
+	c.fillStyle = rgb(shipOpts.weapons.color)
 
-	for (let i = 0; i < opts.weapons.amount; i++) {
+	for (let i = 0; i < shipOpts.weapons.amount; i++) {
 		let drawAWeapon = () =>
 			shadePath(
 				c,
-				opts.weapons.path,
-				overwriteFill || rgb(opts.weapons.color),
-				overwriteFill || lighten(opts.weapons.color, 15),
-				sunAng,
-				sunDis * 0.4
+				shipOpts.weapons.singlePath,
+				opts.fill || rgb(shipOpts.weapons.color),
+				opts.fill || lighten(shipOpts.weapons.color, 15),
+				opts.ang,
+				opts.dis * 0.4
 			)
 
+		const weaponWidth = shipOpts.weapons.w + shipOpts.weapons.margin
 		translateToAndDraw(
 			c,
-			-opts.weapons.x - i * (opts.weapons.w + opts.weapons.margin),
-			opts.weapons.top,
+			-shipOpts.weapons.x - i * weaponWidth,
+			shipOpts.weapons.top,
 			drawAWeapon
 		)
 		translateToAndDraw(
 			c,
-			opts.weapons.x + i * (opts.weapons.w + opts.weapons.margin),
-			opts.weapons.top,
+			shipOpts.weapons.x + i * weaponWidth,
+			shipOpts.weapons.top,
 			drawAWeapon
 		)
 	}

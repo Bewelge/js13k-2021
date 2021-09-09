@@ -315,6 +315,21 @@ function translateToAndDraw(c, x, y, draw) {
 	draw()
 	c.restore()
 }
+export const fillCirc = (c, x, y, rad, col) => {
+	circ(c, x, y, rad)
+	c.fillStyle = col
+	c.fill()
+}
+export const strokeCirc = (c, x, y, rad, col) => {
+	circ(c, x, y, rad)
+	c.strokeStyle = col
+	c.stroke()
+}
+export const circ = (c, x, y, rad) => {
+	c.beginPath()
+	c.arc(x, y, rad, 0, 8)
+	c.closePath()
+}
 export const line = (c, pos0, pos1, col) => {
 	if (col) {
 		c.strokeStyle = "white"
@@ -364,8 +379,8 @@ export const scaleRotate = (c, sc, rot) => {
 	c.scale(sc, sc)
 	c.rotate(rot)
 }
-export const rndBtwn = (min = 0, max = 1) => {
-	return min + (max - min) * Math.random()
+export const rndBtwn = (min = 0, max = 1, rn = Math.random) => {
+	return min + (max - min) * rn()
 }
 export const appendChildren = (parent, children) => {
 	children.forEach(child => parent.appendChild(child))
@@ -396,6 +411,7 @@ export const posMult = (pos, mult) => {
 export const posPlusAng = (pos, ang, dis) => {
 	pos.x += Math.cos(ang) * dis
 	pos.y += Math.sin(ang) * dis
+	return pos
 }
 export const _posPlusAng = (pos, ang, dis) => {
 	return {
@@ -405,6 +421,11 @@ export const _posPlusAng = (pos, ang, dis) => {
 }
 export const setFont = (c, size) => {
 	c.font = size + "px Gill Sans MT"
+}
+export const doXTimes = (doThat, xTimes) => {
+	for (let xTimes = 0; xTimes < x; xTimes++) {
+		doThat()
+	}
 }
 export const txtAt = (c, txt, x, y) => {}
 export {

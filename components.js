@@ -15,12 +15,10 @@ import { translateToAndDraw } from "./Util.js"
 
 export const getComponents = () => {}
 export const getComponentNames = () => {
-	return {
-		hull: "Hull",
-		weapons: "Weapons",
-		wings: "Wings",
-		thrust: "Thrust"
-	}
+	let obj = {}
+	Object.keys(components).forEach(key => (obj[key] = components[key].name))
+	console.log(obj)
+	return obj
 }
 class Component {
 	constructor(statMap) {

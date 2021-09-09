@@ -63,18 +63,21 @@ export const openWindow = (player, enemy, callback) => {
 	const renderCurShip = opts => {
 		cShip0.clearRect(0, 0, scale, scale * 2)
 		cShip1.clearRect(0, 0, scale, scale * 2)
+		let renderOpts = {
+			ang: -Math.PI * 0.5,
+			dis: 0.1,
+			boost: true,
+			boostLeft: true,
+			boostRight: true
+		}
 		renderShip(
 			cShip0,
 			scale / 2,
 			scale,
 			scale / 5,
 			opts,
-			1,
 			-Math.PI * 0.5,
-			-Math.PI * 0.5,
-			0.1,
-			false,
-			true
+			renderOpts
 		)
 		renderShip(
 			cShip1,
@@ -82,12 +85,8 @@ export const openWindow = (player, enemy, callback) => {
 			scale,
 			scale / 5,
 			enemy.shipOpts,
-			1,
 			-Math.PI * 0.5,
-			-Math.PI * 0.5,
-			0.1,
-			false,
-			true
+			renderOpts
 		)
 
 		if (!isClosed) {

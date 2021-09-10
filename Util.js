@@ -305,7 +305,7 @@ function disAngOrigin(x, y) {
 }
 function disAng(x0, y0, x1, y2) {
 	return {
-		ang: angle(x0, y0, x1, y2),
+		angle: angle(x0, y0, x1, y2),
 		dis: dist(x0, y0, x1, y2)
 	}
 }
@@ -317,13 +317,29 @@ function translateToAndDraw(c, x, y, draw) {
 }
 export const fillCirc = (c, x, y, rad, col) => {
 	circ(c, x, y, rad)
-	c.fillStyle = col
+	setFs(c, col)
 	c.fill()
 }
 export const strokeCirc = (c, x, y, rad, col) => {
 	circ(c, x, y, rad)
-	c.strokeStyle = col
+	setSs(c, col)
 	c.stroke()
+}
+export const circs = (c, arr, fill, stroke) => {
+	c.beginPath()
+	arr.forEach(circ => {
+		c.moveTo(circ[0], circ[1])
+		c.arc(circ[0], circ[1], circ[2], 0, 9)
+	})
+	c.closePath()
+	if (stroke) {
+		setSs(c, stroke)
+		c.stroke()
+	}
+	if (fill) {
+		setFs(c, fill)
+		c.fill()
+	}
 }
 export const circ = (c, x, y, rad) => {
 	c.beginPath()
@@ -332,7 +348,7 @@ export const circ = (c, x, y, rad) => {
 }
 export const line = (c, pos0, pos1, col) => {
 	if (col) {
-		c.strokeStyle = "white"
+		setSs(c, "white")
 	}
 	c.beginPath()
 	c.moveTo(pos0.x, pos0.y)
@@ -389,6 +405,18 @@ export const appendChildren = (parent, children) => {
 export const pos = (x, y) => {
 	return { x, y }
 }
+export const copyPos = pos => {
+	return {
+		x: pos.x,
+		y: pos.y
+	}
+}
+export const setFs = (c, fs) => {
+	c.fillStyle = fs
+}
+export const setSs = (c, ss) => {
+	c.strokeStyle = ss
+}
 export const setPos = (pos, x, y) => {
 	pos.x = x
 	pos.y = y
@@ -396,10 +424,12 @@ export const setPos = (pos, x, y) => {
 export const posPlusPos = (pos, pos0) => {
 	pos.x += pos0.x
 	pos.y += pos0.y
+	return pos
 }
 export const posPlus = (pos, plus) => {
 	pos.x += plus
 	pos.y += plus
+	return pos
 }
 export const _posMult = (pos, mult) => {
 	return { x: pos.x * mult, y: pos.y * mult }
@@ -407,6 +437,7 @@ export const _posMult = (pos, mult) => {
 export const posMult = (pos, mult) => {
 	pos.x *= mult
 	pos.y *= mult
+	return pos
 }
 export const posPlusAng = (pos, ang, dis) => {
 	pos.x += Math.cos(ang) * dis

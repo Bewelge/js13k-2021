@@ -10,7 +10,7 @@ const createRandomShip = (rn, level) => {
 	let col1 = getRandomShipColor(rn)
 	let col2 = getRandomSecondaryColor(rn)
 
-	let hp = Math.ceil(2 + rn() * level)
+	let hp = Math.ceil(2 + rn() * (level + 0.01) * 1000)
 	let hull = getHull(rn, col1, hp)
 
 	let wings = getWings(hull, rn, col1, col2, hp)
@@ -40,7 +40,7 @@ function getThrust(rn, hull, color, hp) {
 	for (let i = 1; i <= amount; i++) {
 		points.push([-w2 / 2 + i * stepW - tw / 2, top + h1])
 	}
-	let thrust = {
+	return {
 		h,
 		h1,
 		h2,
@@ -58,15 +58,14 @@ function getThrust(rn, hull, color, hp) {
 		hp,
 		maxHp: hp
 	}
-	return thrust
 }
 
 function getWeapons(rn, wings, color, hp) {
 	let amount = Math.ceil(rn() * 3)
 	let bulletColor = [
-		Math.floor(155 + 100 * rn()),
-		Math.floor(155 + 100 * rn()),
-		Math.floor(155 + 100 * rn())
+		rndBtwn(100, 255, rn),
+		rndBtwn(100, 255, rn),
+		rndBtwn(100, 255, rn)
 	]
 	let w = 0.1 + rn() * 0.15
 	let leftest = Math.max.apply(
@@ -86,19 +85,24 @@ function getWeapons(rn, wings, color, hp) {
 	let topW2 = w
 	let h1 = h * rn()
 	let h2 = h - h1
+	let t1wh = topW1 / 2
+	let t2wh = topW2 / 2
 	let ps = [
-		[-topW1 / 2, 0],
-		[-topW1 / 2, h1],
-		[-topW2 / 2, h1],
-		[-topW2 / 2, h1 + h2],
-		[topW2 / 2, h1 + h2],
-		[topW2 / 2, h1],
-		[topW1 / 2, h1],
-		[topW1 / 2, 0]
+		[-t1wh, 0],
+		[-t1wh, h1],
+		[-t2wh, h1],
+		[-t2wh, h1 + h2],
+		[t2wh, h1 + h2],
+		[t2wh, h1],
+		[t1wh, h1],
+		[t1wh, 0]
 	]
-	let path = new Path2D()
-	path.rect(x, top, (w + margin) * amount * 2 + margin * 2, h)
+	let cpath = new Path2D()
+	cpath.rect(x, top, (w + margin) * amount * 2 + margin * 2, h)
+
 	let isRound = rn() < 0.5
+
+	let path = getAllWeaponsPath(amount, ps, x, margin, w, top, isRound)
 
 	return {
 		topW1,
@@ -116,12 +120,31 @@ function getWeapons(rn, wings, color, hp) {
 		color,
 		bulletColor,
 		isRound,
-		singlePath: getWeaponPath(ps, isRound),
 		hp,
 		maxHp: hp,
 		hitMaskPath: new Path2D(),
-		path
+		path,
+		cpath
 	}
+}
+
+function getAllWeaponsPath(amount, ps, x, margin, w, top, isRound) {
+	let path = new Path2D()
+	for (let i = 0; i < amount; i++) {
+		path.addPath(
+			getSingleWeaponPath(
+				ps.map(pt => [pt[0] + x + i * (margin + w), pt[1] + top]),
+				isRound
+			)
+		)
+		path.addPath(
+			getSingleWeaponPath(
+				ps.map(pt => [pt[0] - x - i * (margin + w), pt[1] + top]),
+				isRound
+			)
+		)
+	}
+	return path
 }
 
 function getWings(hull, rn, color, col2, hp) {
@@ -142,6 +165,7 @@ function getWings(hull, rn, color, col2, hp) {
 
 		let isRound = rn() < 0.5
 
+		const col = rn() < 0.3 ? color : col2
 		list.push({
 			topW,
 			bottomW,
@@ -151,10 +175,11 @@ function getWings(hull, rn, color, col2, hp) {
 			h3,
 			offsetTop,
 			hitMaskPath: new Path2D(),
-			color: rn() < 0.3 ? color : col2,
+			color: col,
 			isRound,
 			path: getWingPath(topW, bottomW, h0, h1, h2, h3, -hull.h / 2, isRound)
 		})
+		list[list.length - 1].path.color = col
 
 		if (minY > offsetTop - hull.h) {
 			minY = offsetTop - hull.h
@@ -282,31 +307,40 @@ export const getMergedWeapons = (weapons1, weapons2, tween) => {
 		["w", "x", "top", "margin", "h", "topW1", "topW2", "h1", "h2", "maxHp"],
 		tween
 	)
-
+	let tw1h = weapons.topW1 / 2
+	let tw2h = weapons.topW2 / 2
 	let ps = [
-		[-weapons.topW1 / 2, 0],
-		[-weapons.topW1 / 2, weapons.h1],
-		[-weapons.topW2 / 2, weapons.h1],
-		[-weapons.topW2 / 2, weapons.h1 + weapons.h2],
-		[weapons.topW2 / 2, weapons.h1 + weapons.h2],
-		[weapons.topW2 / 2, weapons.h1],
-		[weapons.topW1 / 2, weapons.h1],
-		[weapons.topW1 / 2, 0]
+		[-tw1h, 0],
+		[-tw1h, weapons.h1],
+		[-tw2h, weapons.h1],
+		[-tw2h, weapons.h1 + weapons.h2],
+		[tw2h, weapons.h1 + weapons.h2],
+		[tw2h, weapons.h1],
+		[tw1h, weapons.h1],
+		[tw1h, 0]
 	]
 	weapons.amount = weapons2.amount
 
-	weapons.path = new Path2D()
-	weapons.path.rect(
+	weapons.cpath = new Path2D()
+	weapons.cpath.rect(
 		weapons.x,
 		weapons.top,
 		(weapons.w + weapons.margin) * weapons.amount * 2 + weapons.margin * 2,
 		weapons.h
 	)
-
 	weapons.isRound = weapons1.isRound ^ weapons2.isRound
+	weapons.path = getAllWeaponsPath(
+		weapons.amount,
+		ps,
+		weapons.x,
+		weapons.margin,
+		weapons.w,
+		weapons.top,
+		weapons.isRound
+	)
+
 	weapons.leftest = Math.min(weapons1.leftest, weapons2.leftest)
 	weapons.rightest = Math.max(weapons1.rightest, weapons2.rightest)
-	weapons.singlePath = getWeaponPath(ps, weapons.isRound)
 	weapons.bulletColor = getMergedColor(
 		weapons1.bulletColor,
 		weapons2.bulletColor,
@@ -380,7 +414,7 @@ function getThrustPath2(ps, tw, h2) {
 
 	return path
 }
-function getWeaponPath(ps, isRound) {
+function getSingleWeaponPath(ps, isRound) {
 	let path = new Path2D()
 
 	if (isRound) {

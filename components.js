@@ -13,23 +13,14 @@ import {
 } from "./ShipRender.js"
 import { translateToAndDraw } from "./Util.js"
 
-export const getComponents = () => {}
+export const getComponentKeys = () => {
+	return Object.keys(components).sort((a, b) => (b == "hull" ? -1 : 1))
+}
+
 export const getComponentNames = () => {
-	let obj = {}
-	Object.keys(components).forEach(key => (obj[key] = components[key].name))
-	console.log(obj)
-	return obj
+	return Object.keys(components).sort((a, b) => -(a == "hull" ? 1 : 0))
 }
-class Component {
-	constructor(statMap) {
-		Object.entries(statMap).forEach(statEntry => {
-			this[statEntry[0]] = statEntry[1]
-		})
-		this.statDivs = {}
-		this.statVals = {}
-		this.statChangeDivs = {}
-	}
-}
+
 export const components = {
 	weapons: {
 		name: "Weapons",

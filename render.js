@@ -1,4 +1,5 @@
-import { rgb } from "./ShipRender.js"
+import { lighten, rgb } from "./ShipRender.js"
+import { rndBtwn, setFs } from "./Util.js"
 
 export const renderBg = (w, h) => {
 	let cnv2 = document.getElementById("b")
@@ -8,62 +9,27 @@ export const renderBg = (w, h) => {
 	cnv2.height = h
 	let c2 = cnv2.getContext("2d")
 	for (let i = 0; i < 1000; i++) {
-		c2.fillStyle = rgb(
-			[125, 155 + Math.random() * 100, 155 + Math.random() * 100],
-			0.4
+		setFs(
+			c2,
+			rgb([125, 155 + Math.random() * 100, 155 + Math.random() * 100], 0.4)
 		)
 		star(c2, Math.random() * w, Math.random() * h, Math.random() * 2)
 	}
 }
 
-var time = 0
-export const hitExplosion = (c, pos, rad) => {
-	time++
-	for (let i = 0; i < 1; i++) {
-		c.fillStyle =
-			"rgba(" +
-			255 +
-			"," +
-			Math.floor((Math.abs((time % 14) - 7) / 7) * 100 + 150) +
-			"," +
-			Math.floor((Math.abs((time % 34) - 17) / 17) * 55 + 100) +
-			"," +
-			(0.3 + 0.5 * Math.random()) +
-			")"
+var timer = 1
+export const hitExplosion = (progress, c, pos, rad, col) => {
+	timer += 0.1
+	for (let i = 0; i < 3; i++) {
+		setFs(c, lighten(col, rndBtwn(0, 50), rndBtwn(0, 1 - progress)))
+
 		c.beginPath()
 		c.ellipse(
 			pos.x,
 			pos.y,
-			0.3 + rad * 1.2 * Math.random(),
-			0.3 + rad * 0.9 * Math.random(),
-			((time * 0.01) % 1.248) * Math.PI * 2,
-			0,
-			Math.PI * 2,
-			0
-		)
-		c.fill()
-		c.closePath()
-	}
-}
-function drawExplosion(c, rn, pos, rad) {
-	for (let i = 0; i < 20 * zoom; i++) {
-		c.fillStyle =
-			"rgba(" +
-			255 +
-			"," +
-			Math.floor(time * rn() * 255) +
-			"," +
-			Math.floor(time * rn() * 155) +
-			"," +
-			0.5 / i +
-			")"
-		c.beginPath()
-		c.ellipse(
-			pos.x,
-			pos.y,
-			rad * 1.5 * zoom * rn(),
-			rad * 1.2 * zoom * rn(),
-			((time * 0.01) % 1.248) * Math.PI * 2,
+			rad * progress * Math.random(),
+			rad * progress * Math.random(),
+			((timer * 0.01) % 1.248) * Math.PI * 2,
 			0,
 			Math.PI * 2,
 			0

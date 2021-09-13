@@ -314,7 +314,7 @@ function killall() {
 function addExplosion(ship, rad = 1) {
 	for (let i = 0; i < 25; i++) {
 		let z = zoom * 0.05
-		music.playSound("explosion", rad)
+		music.playSound(sounds.explosion, rad)
 		window.setTimeout(() => {
 			particles.add(EXPLOSIONS, [
 				36,
@@ -605,7 +605,7 @@ function tick() {
 	if (mouseDown && !player.isDead) {
 		if (player.shotCd <= 0) {
 			player.shotCd = player.fireRate
-			music.playSound("shoot")
+			music.playSound(sounds.shoot)
 
 			createBullets(player)
 		}
@@ -881,7 +881,14 @@ function drawPlanets(opts) {
 		.filter(planet => planet.rad * zoom > 1)
 		.forEach(planet => drawPlanet(planet, opts))
 }
-
+var UP = "KeyW"
+var UP0 = "ArrowUp"
+var DOWN = "ArrowDown"
+var DOWN0 = "KeyS"
+var LEFT = "KeyA"
+var LEFT0 = "ArrowLeft"
+var RIGHT = "KeyD"
+var RIGHT0 = "ArrowRight"
 function drawPlayer() {
 	let x = player.x
 	let y = player.y
@@ -915,7 +922,7 @@ function drawPlayer() {
 			closePath(c)
 		}
 	}
-	let arrowUp = keysdown["ArrowUp"] || keysdown["KeyW"]
+	let arrowUp = keysdown[UP0] || keysdown[UP]
 	if (arrowUp) {
 		player.shipOpts.thrust.points
 			.filter(el => rnd() < 0.6)
@@ -1155,10 +1162,10 @@ function updatePlayer() {
 	}
 	let speed = player.speed * (shipOpts.thrust.isDead ? 0.25 : 1)
 	let turnSpeed = player.turnSpeed * (shipOpts.wings.isDead ? 0.5 : 1)
-	if (keysdown["ArrowUp"] || keysdown["KeyW"]) {
+	if (keysdown[UP] || keysdown[UP0]) {
 		posPlusAng(player.thrust, player.rot, speed)
 	}
-	if (keysdown["ArrowDown"] || keysdown["KeyS"]) {
+	if (keysdown[DOWN] || keysdown[DOWN0]) {
 		posPlusAng(player.thrust, player.rot, -speed)
 	}
 
@@ -1180,10 +1187,10 @@ function updatePlayer() {
 		player.rot += turn * turnSpeed
 	}
 
-	if (keysdown["ArrowLeft"] || keysdown["KeyA"]) {
+	if (keysdown[LEFT] || keysdown[LEFT0]) {
 		posPlusAng(player.thrust, player.rot + PIH, -speed)
 	}
-	if (keysdown["ArrowRight"] || keysdown["KeyD"]) {
+	if (keysdown[RIGHT] || keysdown[RIGHT0]) {
 		posPlusAng(player.thrust, player.rot + PIH, speed)
 	}
 
@@ -1227,7 +1234,7 @@ function checkCollisions(ship, ignoreBroken) {
 						}
 						comp.hp = Math.max(0, comp.hp - bullet[4])
 						comp.isHit = 15
-						music.playSound("hit")
+						music.playSound(sounds.hit)
 						particles.add(BULLET_HITS, [
 							rndBtwn(15, 25),
 							x,
@@ -3008,7 +3015,7 @@ function getCompClickListener(
 	enemy,
 	curOpts
 ) {
-	music.playSound("merge")
+	music.playSound(sound.merge)
 	let tweenCounter = 50
 	let comp = comps[compName]
 
@@ -3190,7 +3197,6 @@ var components = {
 	}
 }
 
-let chords = ["ACE", "GBD", "FAC", "GBD"]
 var freqs = {
 	A: 440,
 	C: 523.3,
@@ -3200,6 +3206,12 @@ var freqs = {
 	D: 587.3,
 	F: 349.2
 }
+let chords = [
+	[freqs.A, freqs.C, freqs.E],
+	[freqs.G, freqs.B, freqs.D],
+	[freqs.F, freqs.A, freqs.C],
+	[freqs.G, freqs.B, freqs.D]
+]
 var durs = [0.25, 0.5, 1, 2, 4]
 var music
 var muted = false
@@ -3219,7 +3231,7 @@ class Music {
 
 	playRandomNote() {
 		let dur = durs[flr(rnd() * durs.length)]
-		let note = chords[this.curChord].split("")[flr(rnd() * 3)]
+		let note = chords[this.curChord][flr(rnd() * 3)]
 		this.playNote(
 			this.ctx,
 			note,
@@ -3241,7 +3253,7 @@ class Music {
 				this.rythm.forEach((ryth, i) => {
 					this.playChord(
 						this.ctx,
-						chords[this.curChord].split(""),
+						chords[this.curChord],
 						this.nextChordAt - this.time + durCounter,
 						ryth * this.breaks
 					)
@@ -3275,7 +3287,7 @@ class Music {
 		g.gain.exponentialRampToValueAtTime(0.00001, time + delay + dur + 1)
 		o.type = type || "sine"
 		o.connect(g)
-		o.frequency.value = freqs[note]
+		o.frequency.value = note
 		o.start(time + delay)
 		o.stop(time + delay + dur + 2)
 		g.connect(c.destination)
@@ -3284,9 +3296,9 @@ class Music {
 			o.disconnect()
 		}, (delay + dur + 2) * 1000)
 	}
-	playSound(soundKey, dur = 1) {
+	playSound(sound, dur = 1) {
+		let soundKey = sound.id
 		if (muted) return
-		let sound = sounds[soundKey]
 		dur *= sound.dur * rndBtwn(0.9, 1.1)
 		if (!hsOwnProperty(this.queue, soundKey)) {
 			this.queue[soundKey] = []
@@ -3330,7 +3342,8 @@ var sounds = {
 		],
 		freq: 140,
 		dur: 0.1,
-		max: 5
+		max: 5,
+		id: "shoot"
 	},
 	hit: {
 		gains: [
@@ -3345,7 +3358,8 @@ var sounds = {
 		freq: 30,
 		dur: 1,
 		type: "sine",
-		max: 5
+		max: 5,
+		id: "hit"
 	},
 	explosion: {
 		gains: [
@@ -3358,7 +3372,8 @@ var sounds = {
 		],
 		freq: 40,
 		dur: 0.6,
-		max: 2
+		max: 2,
+		id: "explosion"
 	},
 	merge: {
 		gains: [
@@ -3369,6 +3384,7 @@ var sounds = {
 		freqs: [[1, 440]],
 		freq: 80,
 		dur: 0.5,
-		max: 1
+		max: 1,
+		id: "merge"
 	}
 }

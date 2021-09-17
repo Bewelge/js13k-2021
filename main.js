@@ -3015,7 +3015,7 @@ function getCompClickListener(
 	enemy,
 	curOpts
 ) {
-	music.playSound(sound.merge)
+	music.playSound(sounds.merge)
 	let tweenCounter = 50
 	let comp = comps[compName]
 
